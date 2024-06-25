@@ -1,18 +1,15 @@
-use std::f32::INFINITY;
-use std::collections::HashMap;
 use rand;
 use plotters::prelude::*;
-
-const NUMBER_AGENTS: usize = 1;
-const NUMBER_TASKS: usize = 7;
+use std::fs::File;
+use std::io::{self, Write};
 
 #[derive(Debug)]
-struct Task {
-    location: (f64, f64),
+pub(crate)struct Task {
+    pub(crate)location: (f64, f64),
 }
 
 impl Task {
-    fn calc_distance(&self, next_task: (f64,f64)) -> f64{
+    pub(crate)fn calc_distance(&self, next_task: (f64,f64)) -> f64{
         let x_dist: f64 = self.location.0 - next_task.0;
         let y_dist: f64 = self.location.1 - next_task.1;
         ((x_dist.powf(2.0) + y_dist.powf(2.0)) as f64).sqrt()
@@ -25,13 +22,13 @@ impl Clone for Task{
 }
 
 #[derive(Debug)]
-struct Agent {
-    start: (f64, f64),
-    current: (f64, f64),
-    tour: Vec<Task>
+pub(crate)struct Agent {
+    pub(crate)start: (f64, f64),
+    pub(crate)current: (f64, f64),
+    pub(crate)tour: Vec<Task>
 }
 impl Agent {
-    fn calc_distance_from_start(&self, next_task: (f64,f64)) -> f64{
+    pub(crate)fn calc_distance(&self, next_task: (f64,f64)) -> f64{
         let x_dist: f64 = self.start.0 - next_task.0;
         let y_dist: f64 = self.start.1 - next_task.1;
         ((x_dist.powf(2.0) + y_dist.powf(2.0)) as f64).sqrt()
@@ -44,16 +41,16 @@ impl Clone for Agent{
     }
 }
 #[derive(Debug)]
-pub struct Tsp {
-    tasks: Vec<Task>,
-    agents: Vec<Agent>,
-    world_size: (f64, f64),
-    tours: Vec<Vec<f64>>,
-    total_distances: Vec<f64>
+pub(crate)struct Tsp {
+    pub(crate) tasks: Vec<Task>,
+    pub(crate) agents: Vec<Agent>,
+    pub(crate) world_size: (f64, f64),
+    pub(crate) tours: Vec<Vec<f64>>,
+    pub(crate) total_distances: Vec<f64>
 }
 
 impl Tsp {
-    fn calc_all_distance(&self) -> Vec<f64> {
+    pub(crate) fn calc_all_distance(&self) -> Vec<f64> {
         let mut distances: Vec<f64> = Vec::new();
         for i in 0..self.tours.len(){
             let tour = &self.tours[i];
@@ -65,7 +62,7 @@ impl Tsp {
         distances
     }
 
-    fn calc_tours(&self) -> Vec<Vec<f64>> {
+    pub(crate) fn calc_tours(&self) -> Vec<Vec<f64>> {
         let mut tours: Vec<Vec<f64>> = Vec::new();
         let mut tour: Vec<f64> = Vec::new();
         for agent in &self.agents{
@@ -78,7 +75,7 @@ impl Tsp {
         tours
     }
 
-    pub fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
+    pub(crate)fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
         let name = name + ".svg";
         let root = SVGBackend::new(&name, (800, 600)).into_drawing_area();
         root.fill(&WHITE)?;
@@ -113,7 +110,6 @@ impl Tsp {
         for i in 0..all_tours.len(){
             let tour = all_tours[i].clone();
             let color = colors[i].clone();
-            let label_string = format!("Agent{}", &i);
             match chart.draw_series(LineSeries::new(tour, color)) {
                 Ok(_) => (),
                 Err(err) => eprintln!("Error drawing series: {}", err),
@@ -122,149 +118,82 @@ impl Tsp {
         
         Ok(())
     }
-}
 
+    pub fn to_incidence(self, rows_of_graph: usize) -> (Vec<f64>, Vec<Vec<i32>>){
+        let nodes_in_graph = self.agents.len()*2 + (rows_of_graph - 2)*self.tasks.len();
+        // Define edges
+        let mut edge_costs: Vec<f64>  = Vec::new();
+        let mut incidence_mat: Vec<Vec<i32>> = Vec::new();
 
+        // first set of edges is from salesmen 1 to all the cities
+        let mut edge_index = 0; // aka the column
+        let mut to_node = self.agents.len();
+        let mut from_node = 0;
+        for agent in &self.agents{
+            for task in &self.tasks{
+                // Get cost
+                let task_location = task.location;
+                let dist = agent.calc_distance(task_location);
+                edge_costs.push(dist);
 
-pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
-    let number_of_clusters = problem.agents.len();
-    // Initilize centroid to be agents
-    // This was done to push the centroids towards the agents when the agents were not part of centroid calculation
-    // Could play with this for different results
-    let mut centroids: Vec<(f64, f64)> = problem.agents.iter().map(|agent| agent.start).collect();
-
-    let mut diff = 1.0;
-    let mut i = 0;
-    struct Cluster{
-        task_list: Vec<Task>,
-        agent: Agent
-    }
-    impl Clone for Cluster {
-        fn clone(&self) -> Self {
-        Self { task_list: self.task_list.clone(), agent: self.agent.clone() }
-    }
-    }
-    let mut seperated_task_list: Vec<Cluster> = Vec::new();
-    for j in 0..number_of_clusters{
-        seperated_task_list.push(Cluster{task_list: Vec::new(), agent: problem.agents[j].clone()});
-    }
-    let initialize_task_list = seperated_task_list.clone();
-    while diff != 0.0 && i < problem.agents.len()*10{
-        seperated_task_list = initialize_task_list.clone();
-        // Assign each task to it's closest centroid
-        for task in &problem.tasks{
-            let mut distances = vec![];
-            for centroid in centroids.clone(){
-                distances.push(task.calc_distance(centroid));
+                // Incidence matrix
+                let mut new_col = vec![0; nodes_in_graph];
+                new_col[to_node] = -1;
+                new_col[from_node] = 1;
+                incidence_mat.push(new_col);
+                to_node += 1;
+                edge_index += 1;
             }
-            let (min_ind, _) = distances.iter().enumerate().min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap();
-            seperated_task_list[min_ind].task_list.push(task.clone());
+            from_node += 1;
+            to_node = self.agents.len();
         }
-        // Push groups towards closer size
-        // Comment this for loop out for only dense data
-        for i in 0..6*number_of_clusters/3{
-            let mut min_indices: Vec<usize> = (0..seperated_task_list.len()).collect();
-            min_indices.sort_by_key(|&index| seperated_task_list[index].task_list.len());
-            let (max_ind, _) = seperated_task_list.iter().enumerate().max_by_key(|(_, v)| v.task_list.len()).unwrap();
-            // Find task in largest task list closest to original centroid.
-            let mut closest_task_ind = 0;
-            let mut closest_list_ind = 0;
-            let mut dist: f64 = INFINITY.into();
-            for j in 0..seperated_task_list[max_ind].task_list.len(){
-                for k in 0..2{
-                    let min_ind = min_indices[k];
-                    let comp = seperated_task_list[max_ind].task_list[j].calc_distance(centroids[min_ind]);
-                    if comp < dist{
-                        closest_task_ind = j;
-                        closest_list_ind = k;
-                        dist = comp;
-                    }
+        to_node = self.agents.len() + self.tasks.len();
+        // This iterates over all the edges that directly connect cities together
+        for i in 0..rows_of_graph - 3{
+            for task in &self.tasks{
+                for next_task in &self.tasks{
+                    // Cost
+                    let dist = task.calc_distance(next_task.location);
+                    edge_costs.push(dist);
+
+                    // Incidence 
+                    let mut new_col = vec![0; nodes_in_graph];
+                    new_col[to_node] = -1;
+                    new_col[from_node] = 1;
+                    incidence_mat.push(new_col);
+                    to_node += 1;
+                    edge_index += 1;
                 }
+                to_node = self.agents.len() + (i+1)*self.tasks.len();
+                from_node += 1;
             }
-            let moved_task = seperated_task_list[max_ind].task_list.remove(closest_task_ind);
-            seperated_task_list[closest_list_ind].task_list.push(moved_task);
         }
-        
-        // Find centroids of groups, without using the agents
-        let mut new_centroids = Vec::new();
-        for cluster in seperated_task_list.clone(){
-            let (sum_x, sum_y): (f64, f64) = cluster
-                .task_list
-                .iter()
-                .map(|task| task.location)
-                .fold((0.0, 0.0), |(acc_x, acc_y), (x, y)| (acc_x + x, acc_y + y));
-            let new_centroid = (sum_x/(cluster.task_list.len() as f64), sum_y/(cluster.task_list.len() as f64));
-            new_centroids.push(new_centroid);
-        }
-        // Assign agents to closest centroids
-        let mut possible_centroid_indecies =Vec::from_iter(0..number_of_clusters);
-        for agent in &problem.agents{
-            let mut min_dist = INFINITY as f64;
-            let mut index_of_possible_centroids = 0;
-            for j in &possible_centroid_indecies{
-                let centroid = new_centroids[*j];
-                let distance = agent.calc_distance_from_start(centroid);
-                    if distance < min_dist{
-                        min_dist = distance;
-                        index_of_possible_centroids = *j as usize;
+        to_node = self.agents.len() + self.tasks.len()*(rows_of_graph - 2);
+        // The last set of edges is from the last row of cities to the depots
+        for task in &self.tasks{
+            for agent in &self.agents{
+                // Cost
+                let dist = task.calc_distance(agent.start);
+                edge_costs.push(dist);
 
-                     }
+                // Incidence
+                let mut new_col = vec![0; nodes_in_graph ];
+                new_col[to_node] = -1;
+                new_col[from_node] = 1;
+                incidence_mat.push(new_col);
+                to_node += 1;
+                edge_index += 1;
             }
-            seperated_task_list[index_of_possible_centroids].agent = agent.clone();
-            possible_centroid_indecies.retain(|&x| x != index_of_possible_centroids);
+            to_node = self.agents.len() + (rows_of_graph - 2)*self.tasks.len();
+            from_node += 1;
         }
-
-        // Find new centroids including the agents
-        new_centroids = vec![];
-        for cluster in seperated_task_list.clone(){
-            let (mut sum_x, mut sum_y): (f64, f64) = cluster
-                .task_list
-                .iter()
-                .map(|task| task.location)
-                .fold((0.0, 0.0), |(acc_x, acc_y), (x, y)| (acc_x + x, acc_y + y));
-            sum_x += cluster.agent.start.0;
-            sum_y += cluster.agent.start.1;
-            let new_centroid = (sum_x/((cluster.task_list.len()+ 1) as f64), sum_y/((cluster.task_list.len() + 1) as f64));
-            new_centroids.push(new_centroid);
-        }
-
-        // Compare new centroids with previous iteration
-        diff = 0.0;
-        for j in 0..centroids.len(){
-            println!("Old Centroid: {:?}", centroids[j]);
-            println!("New Centroid: {:?}", new_centroids[j]);
-            let dist = ((centroids[j].0 - new_centroids[j].0).powf(2.0) + (centroids[j].1 - new_centroids[j].1).powf(2.0)).sqrt();
-            diff += dist;
-        }
-        println!("Distance from previous centroid: {}", &diff);
-        centroids = new_centroids;
-        i += 1; 
+        print!("Number of edges{}", edge_index);
+        return (edge_costs, incidence_mat);
     }
-    // Create the vector Traveling salesmen problems to solve individually
-    let mut seperated_problems: Vec<Tsp> = vec![];
-    for cluster in seperated_task_list{
-        seperated_problems.push(Tsp{
-            tasks: cluster.task_list, 
-            agents: vec![cluster.agent], 
-            world_size: problem.world_size, 
-            tours: Vec::new(), 
-            total_distances: Vec::new()})
-    }
-    for i in 0..seperated_problems.len(){
-        println!("Problem {} has {} tasks", i, seperated_problems[i].tasks.len());
-        println!("Problem {} has {:?} agent starting points", i, seperated_problems[i].agents.iter().map(|agent: &Agent| agent.start).collect::<Vec<(f64, f64)>>());
-        seperated_problems[i].agents[0].tour = seperated_problems[i].tasks.clone();
-        seperated_problems[i].tours = seperated_problems[i].calc_tours();
-        seperated_problems[i].total_distances = seperated_problems[i].calc_all_distance();
-        println!("The problem has total distance {:?}", seperated_problems[i].total_distances);
-    }
-    // println!("Seperated Problems: {:?}", seperated_problems);
-    seperated_problems
-
 }
 
 
-pub fn create_specific_tsp() -> Tsp{
+pub(crate)fn create_specific_tsp() -> Tsp{
     let tasks = vec![
         Task{ location: (0.5, 1.0)}, 
         Task{ location: (4.5, 3.0)},
@@ -292,7 +221,7 @@ pub fn create_specific_tsp() -> Tsp{
     problem
 }
 
-pub fn create_specific_mtsp() -> Tsp{
+pub(crate)fn create_specific_mtsp() -> Tsp{
     let mut tasks1 = vec![
         Task{ location: (0.5, 1.0)}, 
         Task{ location: (4.5, 3.0)},
@@ -338,9 +267,9 @@ pub fn create_specific_mtsp() -> Tsp{
 }
 
 
-pub fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size: (f64, f64)) -> Tsp{
+pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size: (f64, f64)) -> Tsp{
     let mut tasks = vec![];
-    for i in 0..num_tasks{
+    for _ in 0..num_tasks{
         tasks.push(Task{ location: (world_size.0*rand::random::<f64>(), world_size.1*rand::random::<f64>())});
     }
     let task_lists: Vec<Vec<Task>> = tasks.chunks(num_tasks/num_agents).map(|s| s.into()).collect();
@@ -363,4 +292,38 @@ pub fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size: (f64,
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
     problem
+}
+
+pub(crate) fn create_basic_network_flow()-> io::Result<()> {
+    let prob = create_specific_mtsp();
+    let (costs, mat) = prob.to_incidence(5);
+    write_incidence(costs, mat, "Basic_Data".to_owned())?;
+    
+
+    Ok(())
+}
+
+fn write_incidence(costs: Vec<f64>, mat: Vec<Vec<i32>>, name: String) -> io::Result<()>{
+    let path = "../Milp/Network_Flow/".to_owned() + &name + ".txt";
+    let mut file = File::create(path)?;
+    for cost in costs{
+        write!(file, "{} ", cost)?;
+    }
+    writeln!(file)?;
+    for vec in mat{
+        for val in vec{
+            write!(file, "{} ", val)?;
+        }
+        writeln!(file)?;
+    }
+    Ok(())
+}
+
+pub(crate)fn create_random_network_flow(num_agents: usize, num_tasks: usize, world_size: (f64, f64)) -> io::Result<()>{
+    let prob = create_random_mtsp(num_agents, num_tasks, world_size);
+    let (costs, mat) = prob.to_incidence(5);
+    write_incidence(costs, mat, "Data".to_owned())?;
+
+    Ok(())
+    
 }
