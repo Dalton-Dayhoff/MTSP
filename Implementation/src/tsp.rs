@@ -119,7 +119,7 @@ impl Tsp {
         Ok(())
     }
 
-    pub fn to_incidence(self, rows_of_graph: usize) -> (Vec<f64>, Vec<Vec<i32>>){
+    pub fn to_incidence(self, rows_of_graph: usize) -> (Vec<f64>, Vec<Vec<i32>>, Vec<usize>){
         let nodes_in_graph = self.agents.len()*2 + (rows_of_graph - 2)*self.tasks.len();
         // Define edges
         let mut edge_costs: Vec<f64>  = Vec::new();
@@ -167,8 +167,9 @@ impl Tsp {
                 to_node = self.agents.len() + (i+1)*self.tasks.len();
                 from_node += 1;
             }
+            to_node = self.agents.len() + (i+self.agents.len())*self.tasks.len();
         }
-        to_node = self.agents.len() + self.tasks.len()*(rows_of_graph - 2);
+        to_node = self.agents.len() + self.tasks.len()*(rows_of_graph - self.agents.len());
         // The last set of edges is from the last row of cities to the depots
         for task in &self.tasks{
             for agent in &self.agents{
@@ -184,11 +185,11 @@ impl Tsp {
                 to_node += 1;
                 edge_index += 1;
             }
-            to_node = self.agents.len() + (rows_of_graph - 2)*self.tasks.len();
+            to_node = self.agents.len() + (rows_of_graph - self.agents.len())*self.tasks.len();
             from_node += 1;
         }
-        print!("Number of edges{}", edge_index);
-        return (edge_costs, incidence_mat);
+        let other_data = vec![self.tasks.len(), self.agents.len(), rows_of_graph - self.agents.len(), nodes_in_graph];  
+        return (edge_costs, incidence_mat, other_data);
     }
 }
 
@@ -296,14 +297,12 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
 
 pub(crate) fn create_basic_network_flow()-> io::Result<()> {
     let prob = create_specific_mtsp();
-    let (costs, mat) = prob.to_incidence(5);
-    write_incidence(costs, mat, "Basic_Data".to_owned())?;
-    
-
+    let (costs, mat, other_data) = prob.to_incidence(9);
+    write_incidence(costs, mat, other_data, "Basic_Data".to_owned())?;
     Ok(())
 }
 
-fn write_incidence(costs: Vec<f64>, mat: Vec<Vec<i32>>, name: String) -> io::Result<()>{
+fn write_incidence(costs: Vec<f64>, mat: Vec<Vec<i32>>, other_data: Vec<usize>, name: String) -> io::Result<()>{
     let path = "../Milp/Network_Flow/".to_owned() + &name + ".txt";
     let mut file = File::create(path)?;
     for cost in costs{
@@ -316,13 +315,17 @@ fn write_incidence(costs: Vec<f64>, mat: Vec<Vec<i32>>, name: String) -> io::Res
         }
         writeln!(file)?;
     }
+    writeln!(file)?;
+    for data in other_data{
+        write!(file, "{} ", data)?;
+    }
     Ok(())
 }
 
-pub(crate)fn create_random_network_flow(num_agents: usize, num_tasks: usize, world_size: (f64, f64)) -> io::Result<()>{
+pub(crate)fn create_random_network_flow(num_agents: usize, num_tasks: usize, world_size: (f64, f64), num_rows: usize) -> io::Result<()>{
     let prob = create_random_mtsp(num_agents, num_tasks, world_size);
-    let (costs, mat) = prob.to_incidence(5);
-    write_incidence(costs, mat, "Data".to_owned())?;
+    let (costs, mat, other_data) = prob.to_incidence(num_rows);
+    write_incidence(costs, mat, other_data, "Data".to_owned())?;
 
     Ok(())
     
