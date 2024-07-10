@@ -30,6 +30,7 @@ then run
 ```bash
 grbgetkey <license id here>
 ```
+The one problem with installing gurobipy this way is that the full gurobi suite is not installed. This is why the executable grbgetkey is included in the repo; hoever, sometimes this executable does not work. If that is the case, the tools can be installed from https://support.gurobi.com/hc/en-us/articles/360059842732-How-do-I-set-up-a-license-without-installing-the-full-Gurobi-package.
 
 There are 3 required python packages (numpy, gurobipy, and matplotlib). The user need not worry about installing these because it is taken care of within the setup function. This is because Rust sometimes loses track of where the packages are within the virtual environment. Meaning it is good to ensure Rust knows where they are before running each time.
 
