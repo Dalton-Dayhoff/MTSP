@@ -15,11 +15,19 @@ pub(crate) fn setup() -> PyResult<()> {
     Python::with_gil(|py| {
         // Ensure the correct python version
         assert!(py.version().starts_with("3.12"));
-        // Give rust access to the python packages in the virtual environment
-        let sys = py.import_bound("sys").unwrap();
-        let venv_site_packages = "../.venv/lib/python3.12/site-packages"; // Adjust this path
-        sys.getattr("path").unwrap().call_method1("append", (venv_site_packages,)).unwrap();
         
+         // Get the active virtual environment path using virtualenv
+        let virtual_env_path = std::env::var("VIRTUAL_ENV").unwrap_or_else(|_| {
+            panic!("No virtual environment found. Ensure you have an active virtual environment.");
+        });
+
+        // Construct the path to the site-packages directory
+        let venv_site_packages = format!("{}/lib/python3.12/site-packages", virtual_env_path);
+
+        // Give Rust access to the Python packages in the virtual environment
+        let sys = py.import_bound("sys").unwrap();
+        sys.getattr("path").unwrap().call_method1("append", (venv_site_packages.clone(),)).unwrap();
+
         // Function to install a package to the virtual environment
         fn install_package(package: &str, python_interpreter: &str) {
             let output = Command::new(python_interpreter)
