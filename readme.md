@@ -22,7 +22,18 @@ python -m venv .venv
 There are 5 required crates that can all be downloaded from crates.io: nalgebra (0.33), plotters (0.3.5), plotters-backend (0.3.5), rand (0.8.5), and pyo3 (0.22.0). The first four are common amongst all rust projects and are self explanatory. The last crate, pyo3, allows for communication between python and rust.
 
 ## Python Packages
+Using gurobipy to solve any problem that is complicated requires a license. To install this license, first ensure guriobipy is installed using
+```bash
+pip install gurobipy
+```
+then run
+```bash
+grbgetkey <license id here>
+```
+
 There are 3 required python packages (numpy, gurobipy, and matplotlib). The user need not worry about installing these because it is taken care of within the setup function. This is because Rust sometimes loses track of where the packages are within the virtual environment. Meaning it is good to ensure Rust knows where they are before running each time.
+
+
 
 
 # Documentation
