@@ -1,7 +1,6 @@
 
 use initilization::k_clustering;
-use tsp::create_random_network_flow;
-use network_flow::{get_results, setup, test_network_flow};
+use network_flow::{setup, test_network_flow};
 
 mod tsp;
 mod initilization;

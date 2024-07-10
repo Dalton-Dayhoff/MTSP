@@ -1,11 +1,13 @@
-use core::num;
+
 use std::process::Command;
-use full_palette::{GREEN_900, DEEPPURPLE};
+use full_palette::DEEPPURPLE;
 use plotters::prelude::*;
 use pyo3::prelude::*;
+use pyo3::prelude::PyResult;
 use rand::Rng;
 
 use crate::tsp::create_random_network_flow;
+
 
 /// Setup the virtual environment
 /// Make sure Rust has access to the required python packages
@@ -74,19 +76,26 @@ pub(crate) fn setup() -> PyResult<()> {
 /// Calls the gurobi solver from python to solve the network flow formulation of the MTSP
 /// Returns the augmented score, the runtime, and the true score
 /// 
-/// * 'data' - Contains the num_tasks, num_agents, num_rows, num_nodes, num_edges for the variables struct in python
+/// * 'data' - Contains the num_tasks, num_agents, num_columns, num_nodes, num_edges for the variables struct in python
 /// * 'costs' - Augmented costs for network flow
 /// * 'distances' - True costs
 /// * 'inc_mat' - The incidence matrix for the problem
-pub(crate) fn get_results(data: Vec<usize>, costs: Vec<f64>, distances: Vec<f64>, inc_mat: Vec<Vec<i32>>) -> PyResult<((f64, f64, f64))>{
-
+pub(crate) fn get_results(
+    data: Vec<usize>, 
+    costs: Vec<f64>, 
+    distances: Vec<f64>, 
+    inc_mat: Vec<Vec<i32>>
+) -> PyResult<(f64, f64, f64)>{
+    // Start Python
     pyo3::prepare_freethreaded_python();
+    // Get the python file as a string
     let py_functions = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/Solvers/Network_Flow/NetworkFlow.py"
     ));
     let (score, time, dist) = Python::with_gil(|py| {
         // Set up variables class
+        // Read the string python file and pull out variables class
         let py_module = PyModule::from_code_bound(
             py, 
             py_functions, 
@@ -96,20 +105,22 @@ pub(crate) fn get_results(data: Vec<usize>, costs: Vec<f64>, distances: Vec<f64>
         .unwrap();
         let variables_class = py_module.getattr("Variables").unwrap();
         let variables = variables_class.call1(
-            (data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4]
+            (data[0],// num tasks
+            data[1], // num agents
+            data[2], // num columns
+            data[3], // num nodes
+            data[4] // num edges
             )
         ).unwrap();
 
-        // Get the resutls
-        let solver: Py<PyAny> = py_module.getattr("solve_all_constraints").unwrap().into();
+        // Solve the given problem using MILP
+        // Convert to python types
         let costs_py = costs.into_py(py);
         let inc_mat_py = inc_mat.into_py(py);
         let variables_py = variables.into_py(py);
         let distances_py = distances.into_py(py);
+        // Get the function to solve
+        let solver: Py<PyAny> = py_module.getattr("solve_all_constraints").unwrap().into();
         let result = solver.call1(py, (costs_py, distances_py, inc_mat_py, variables_py));
         result.unwrap().extract(py).unwrap()
     });
@@ -136,13 +147,13 @@ pub(crate) fn test_network_flow(
     world_size: (f64, f64),
     cost_multiplyer: usize
 ) {
-    
+    // Initialize data storage
     let mut scores: Vec<f64> = Vec::new();
     let mut times: Vec<f64> = Vec::new();
     let mut true_scores: Vec<f64> = Vec::new();
     let mut tasks: Vec<f64> = Vec::new();
     let mut agents: Vec<f64> = Vec::new();
-
+    // Generate data
     for i in 0..num_trials{
         println!("Trial {}", i + 1);
         let num_tasks = rand::thread_rng().gen_range(min_tasks..max_tasks);
@@ -163,6 +174,8 @@ pub(crate) fn test_network_flow(
         true_scores.push(dist);
     }
     let trial_numbers: Vec<f64> = (0..num_trials).map(|x| x as f64).collect();
+
+    // Display data
     let root_area = BitMapBackend::new("images/Scores and RunTimes.png", (1000, 600))
         .into_drawing_area();
     root_area.fill(&WHITE).unwrap();
@@ -179,6 +192,7 @@ pub(crate) fn test_network_flow(
     // Setup the extra data for plotting
     let color = &DEEPPURPLE;
     let labels = ["Distance", "RunTimes", "Tasks", "Agents"];
+    // Plot
     for (i, area) in areas.iter().enumerate(){
         let mut chart = ChartBuilder::on(area)
             .margin(50)

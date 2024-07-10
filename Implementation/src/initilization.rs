@@ -7,7 +7,7 @@ pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
     // Initilize centroid to be agents
     // This was done to push the centroids towards the agents when the agents were not part of centroid calculation
     // Could play with this for different results
-    let mut centroids: Vec<(f64, f64)> = problem.agents.iter().map(|agent| agent.start).collect();
+    let mut centroids: Vec<(f64, f64)> = problem.agents.iter().map(|agent| agent.depot_location).collect();
 
     let mut diff = 1.0;
     let mut i = 0;
@@ -99,8 +99,8 @@ pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
                 .map(|task| task.location)
                 .fold((0.0, 0.0), |(acc_x, acc_y), (x, y)| (acc_x + x, acc_y + y));
             let weighting_of_agent_location = 0.5;
-            sum_x += weighting_of_agent_location*cluster.agent.start.0;
-            sum_y += weighting_of_agent_location*cluster.agent.start.1;
+            sum_x += weighting_of_agent_location*cluster.agent.depot_location.0;
+            sum_y += weighting_of_agent_location*cluster.agent.depot_location.1;
             let new_centroid = (sum_x/((cluster.task_list.len()+ 1) as f64), sum_y/((cluster.task_list.len() + 1) as f64));
             new_centroids.push(new_centroid);
         }
