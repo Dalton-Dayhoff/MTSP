@@ -1,7 +1,6 @@
 use rand;
 use plotters::prelude::*;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 
 #[derive(Debug)]
 pub(crate)struct Task {
@@ -76,7 +75,7 @@ impl Tsp {
     }
 
     pub(crate)fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
-        let name = name + ".svg";
+        let name = "Images/".to_owned() + &name + ".svg";
         let root = SVGBackend::new(&name, (800, 600)).into_drawing_area();
         root.fill(&WHITE)?;
 
@@ -119,14 +118,14 @@ impl Tsp {
         Ok(())
     }
 
-    pub fn to_incidence(self, rows_of_graph: usize) -> (Vec<f64>, Vec<Vec<i32>>, Vec<usize>){
+    pub fn to_incidence(self, rows_of_graph: usize, early_ender: usize) -> (Vec<f64>, Vec<f64>, Vec<Vec<i32>>, Vec<usize>){
         let nodes_in_graph = self.agents.len()*2 + (rows_of_graph - 2)*self.tasks.len();
         // Define edges
         let mut edge_costs: Vec<f64>  = Vec::new();
+        let mut distances: Vec<f64> = Vec::new();
         let mut incidence_mat: Vec<Vec<i32>> = Vec::new();
 
         // first set of edges is from salesmen 1 to all the cities
-        let mut edge_index = 0; // aka the column
         let mut to_node = self.agents.len();
         let mut from_node = 0;
         for agent in &self.agents{
@@ -135,64 +134,64 @@ impl Tsp {
                 let task_location = task.location;
                 let dist = agent.calc_distance(task_location);
                 edge_costs.push(dist);
+                distances.push(dist);
 
                 // Incidence matrix
-                let mut new_col = vec![0; nodes_in_graph];
-                new_col[to_node] = -1;
-                new_col[from_node] = 1;
-                incidence_mat.push(new_col);
+                update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
                 to_node += 1;
-                edge_index += 1;
             }
             from_node += 1;
             to_node = self.agents.len();
         }
         to_node = self.agents.len() + self.tasks.len();
         // This iterates over all the edges that directly connect cities together
-        for i in 0..rows_of_graph - 3{
+        for i in 0..rows_of_graph - 2{
             for task in &self.tasks{
                 for next_task in &self.tasks{
+                    if i == rows_of_graph - 3{
+                        break;
+                    }
                     // Cost
                     let dist = task.calc_distance(next_task.location);
                     edge_costs.push(dist);
+                    distances.push(dist);
 
                     // Incidence 
-                    let mut new_col = vec![0; nodes_in_graph];
-                    new_col[to_node] = -1;
-                    new_col[from_node] = 1;
-                    incidence_mat.push(new_col);
+                    update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
                     to_node += 1;
-                    edge_index += 1;
                 }
+                // Connect to end nodes
+                // Set the node the edge is going to
+                to_node = self.agents.len() + (rows_of_graph - 2)*self.tasks.len();
+                for agent in &self.agents{
+                    // Cost
+                    let dist = task.calc_distance(agent.start);
+                    let multiplyer = if i >= 10 {1.0} else {(10 - i) as f64};
+                    edge_costs.push((multiplyer * early_ender as f64 * (rows_of_graph - i) as f64) *dist);
+                    distances.push(dist);
+                    // Incidence 
+                    update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
+                    to_node += 1;
+                }
+
+                // Set the nodes the edge is connected to
                 to_node = self.agents.len() + (i+1)*self.tasks.len();
                 from_node += 1;
             }
-            to_node = self.agents.len() + (i+self.agents.len())*self.tasks.len();
+            // Set the node the edge is going to
+            to_node = self.agents.len() + (i+2)*self.tasks.len();
         }
-        to_node = self.agents.len() + self.tasks.len()*(rows_of_graph - self.agents.len());
-        // The last set of edges is from the last row of cities to the depots
-        for task in &self.tasks{
-            for agent in &self.agents{
-                // Cost
-                let dist = task.calc_distance(agent.start);
-                edge_costs.push(dist);
-
-                // Incidence
-                let mut new_col = vec![0; nodes_in_graph ];
-                new_col[to_node] = -1;
-                new_col[from_node] = 1;
-                incidence_mat.push(new_col);
-                to_node += 1;
-                edge_index += 1;
-            }
-            to_node = self.agents.len() + (rows_of_graph - self.agents.len())*self.tasks.len();
-            from_node += 1;
-        }
-        let other_data = vec![self.tasks.len(), self.agents.len(), rows_of_graph - self.agents.len(), nodes_in_graph];  
-        return (edge_costs, incidence_mat, other_data);
+        let other_data = vec![self.tasks.len(), self.agents.len(), rows_of_graph - 2, nodes_in_graph, edge_costs.len()];  
+        return (distances, edge_costs, incidence_mat, other_data);
     }
 }
 
+fn update_incidence(num_nodes: &usize, to_node: &usize, from_node: &usize, inc_mat: &mut Vec<Vec<i32>>) {
+    let mut new_col = vec![0; *num_nodes ];
+    new_col[*to_node] = -1;
+    new_col[*from_node] = 1;
+    inc_mat.push(new_col);
+}
 
 pub(crate)fn create_specific_tsp() -> Tsp{
     let tasks = vec![
@@ -295,38 +294,19 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
     problem
 }
 
-pub(crate) fn create_basic_network_flow()-> io::Result<()> {
+pub(crate) fn _create_basic_network_flow()-> io::Result<(Vec<usize>, Vec<f64>, Vec<Vec<i32>>)> {
     let prob = create_specific_mtsp();
-    let (costs, mat, other_data) = prob.to_incidence(9);
-    write_incidence(costs, mat, other_data, "Basic_Data".to_owned())?;
-    Ok(())
+    let (distances, costs, mat, other_data) = prob.to_incidence(9, 2);
+    Ok((other_data, costs, mat))
 }
 
-fn write_incidence(costs: Vec<f64>, mat: Vec<Vec<i32>>, other_data: Vec<usize>, name: String) -> io::Result<()>{
-    let path = "../Milp/Network_Flow/".to_owned() + &name + ".txt";
-    let mut file = File::create(path)?;
-    for cost in costs{
-        write!(file, "{} ", cost)?;
-    }
-    writeln!(file)?;
-    for vec in mat{
-        for val in vec{
-            write!(file, "{} ", val)?;
-        }
-        writeln!(file)?;
-    }
-    writeln!(file)?;
-    for data in other_data{
-        write!(file, "{} ", data)?;
-    }
-    Ok(())
-}
 
-pub(crate)fn create_random_network_flow(num_agents: usize, num_tasks: usize, world_size: (f64, f64), num_rows: usize) -> io::Result<()>{
+pub(crate)fn create_random_network_flow(num_agents: usize, num_tasks: usize, world_size: (f64, f64), mut num_rows: usize, cost_multiplyer: usize) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)>{
     let prob = create_random_mtsp(num_agents, num_tasks, world_size);
-    let (costs, mat, other_data) = prob.to_incidence(num_rows);
-    write_incidence(costs, mat, other_data, "Data".to_owned())?;
-
-    Ok(())
+    if num_rows < num_tasks{
+        num_rows = num_tasks + 1;
+    }
+    let (distances, costs, mat, other_data) = prob.to_incidence(num_rows, cost_multiplyer);
+    Ok((other_data, costs, distances,  mat))
     
 }

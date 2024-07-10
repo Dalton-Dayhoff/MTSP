@@ -38,7 +38,7 @@ pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
         }
         // Push groups towards closer size
         // Comment this for loop out for only dense data
-        for i in 0..6*number_of_clusters/3{
+        for _ in 0..6*number_of_clusters/3{
             let mut min_indices: Vec<usize> = (0..seperated_task_list.len()).collect();
             min_indices.sort_by_key(|&index| seperated_task_list[index].task_list.len());
             let (max_ind, _) = seperated_task_list.iter().enumerate().max_by_key(|(_, v)| v.task_list.len()).unwrap();
