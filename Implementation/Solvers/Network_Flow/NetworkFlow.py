@@ -167,7 +167,7 @@ def solve_all_constraints(costs, distances, inc_mat, vars: Variables) -> Tuple[f
     
     # Create the problem
     m = gp.Model("NewModel")
-    m.setParam("OutputFlag", 0)
+    m.setParam("OutputFlag", 1)
     x = m.addVars(vars.num_edges, vtype=GRB.BINARY)
     # Constraints
     z = gp.MVar.fromlist(x.select())
@@ -220,10 +220,5 @@ def solve_all_constraints(costs, distances, inc_mat, vars: Variables) -> Tuple[f
     for i, (edge) in enumerate(edge_usage):
         if edge > 0:
             cost += distances[i]
-
-    print(f"Optimal Value: {value}")
-    # if value > 100000:
-    #     visualize(x_i, inc_mat, vars)
-    #     plt.show()
 
     return value, time, cost

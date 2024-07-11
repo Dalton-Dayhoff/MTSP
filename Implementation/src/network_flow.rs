@@ -5,6 +5,8 @@ use plotters::prelude::*;
 use pyo3::prelude::*;
 use pyo3::prelude::PyResult;
 use rand::Rng;
+use std::fs;
+use toml::Value;
 
 use crate::tsp::create_random_network_flow;
 
@@ -53,8 +55,8 @@ pub(crate) fn setup() -> PyResult<()> {
             }
         }
         // Check installed packages using pip
-        let python_interpreter = "../.venv/bin/python";
-        let output = Command::new(python_interpreter)
+        let python_interpreter = format!("{}/bin/python", virtual_env_path);
+        let output = Command::new(python_interpreter.clone())
             .arg("-m")
             .arg("pip")
             .arg("list")
@@ -164,8 +166,18 @@ pub(crate) fn test_network_flow(
     // Generate data
     for i in 0..num_trials{
         println!("Trial {}", i + 1);
-        let num_tasks = rand::thread_rng().gen_range(min_tasks..max_tasks);
-        let num_agents = rand::thread_rng().gen_range(min_agents..max_agents);
+        let num_tasks;
+        if min_tasks < max_tasks{
+            num_tasks = rand::thread_rng().gen_range(min_tasks..max_tasks);
+        }else{
+            num_tasks = min_tasks;
+        }
+        let num_agents;
+        if min_agents < max_agents{
+            num_agents = rand::thread_rng().gen_range(min_agents..max_agents);
+        } else{
+            num_agents = min_agents;
+        }
         let (data, costs, distances,  inc_mat) = create_random_network_flow(
             num_agents.clone(), 
             num_tasks.clone(), 
@@ -207,7 +219,7 @@ pub(crate) fn test_network_flow(
             .caption(format!("{}", labels[i]), ("sans-serif", 20).into_font())
             .x_label_area_size(5)
             .y_label_area_size(30)
-            .build_cartesian_2d(0.0..num_trials as f64, 0.0..data_series[i].iter().map(|&(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(10.0))
+            .build_cartesian_2d(0.0..(num_trials - 1) as f64, 0.0..data_series[i].iter().map(|&(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(10.0))
             .unwrap();
 
         chart.configure_mesh()
@@ -220,4 +232,68 @@ pub(crate) fn test_network_flow(
         )).unwrap();
     }
     root_area.present().unwrap();
+}
+
+pub(crate)fn read_toml(version: String)-> Result<(), Box<dyn std::error::Error>>{
+    let toml_content = fs::read_to_string("Variables/networkFlow.toml")?;
+
+    let val: Value = toml_content.parse()?;
+    if version == "run"{
+        // Get MTSP generation variables
+        let mtsp_vars = val.get("mTSP").unwrap();
+        let num_agents:usize = mtsp_vars.get("num_agents").unwrap().as_integer().unwrap() as usize;
+        let num_tasks = mtsp_vars.get("num_tasks").unwrap().as_integer().unwrap() as usize;
+        let cost_multiplyer = mtsp_vars.get("cost_multiplyer").unwrap().as_integer().unwrap() as usize;
+        let world_size_array = mtsp_vars.get("world_size").unwrap().as_array().unwrap();
+        let world_size: Vec<f64> = world_size_array.iter()
+            .filter_map(|val| val.as_float())
+            .collect();
+
+        // Get Network Flow variables
+        let network_flow_vars = val.get("NetworkFlow").unwrap();
+        let num_columns = network_flow_vars.get("num_columns").unwrap().as_integer().unwrap() as usize;
+        
+
+        // Create Problem
+        let (data, costs, distances,  inc_mat) = create_random_network_flow(
+            num_agents.clone(), 
+            num_tasks.clone(), 
+            (world_size[0], world_size[1]), 
+            num_columns.clone(), 
+            cost_multiplyer
+        ).unwrap();
+        let (score, time, dist) = get_results(data, costs, distances, inc_mat).unwrap();
+        println!("Objective Score: {}", score);
+        println!("Gurobipy Runtime: {}", time);
+        println!("Total distance travelled: {}", dist);
+    } else if version == "test" {
+        // Get testing variables
+        let test_vars = val.get("TestMilp").unwrap();
+        let num_trials = test_vars.get("num_trials").unwrap().as_integer().unwrap() as usize;
+        let max_tasks = test_vars.get("max_tasks").unwrap().as_integer().unwrap() as usize;
+        let min_tasks = test_vars.get("min_tasks").unwrap().as_integer().unwrap() as usize;
+        let max_agents = test_vars.get("max_agents").unwrap().as_integer().unwrap() as usize;
+        let min_agents = test_vars.get("min_agents").unwrap().as_integer().unwrap() as usize;
+
+        println!("Agents range: {}-{}", min_agents, max_agents);
+        println!("Tasks range: {}-{}", min_tasks, max_tasks);
+
+        // Get world size and cost multiplyer
+        let mtsp_vars = val.get("mTSP").unwrap();
+        let cost_multiplyer = mtsp_vars.get("cost_multiplyer").unwrap().as_integer().unwrap() as usize;
+        let world_size_array = mtsp_vars.get("world_size").unwrap().as_array().unwrap();
+        let world_size: Vec<f64> = world_size_array.iter()
+            .filter_map(|val| val.as_float())
+            .collect();
+        test_network_flow(
+            num_trials,
+            max_tasks, 
+            min_tasks, 
+            max_agents, 
+            min_agents, 
+            (world_size[0], world_size[1]), 
+            cost_multiplyer)
+    } 
+
+    Ok(())
 }

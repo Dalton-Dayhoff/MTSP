@@ -111,7 +111,6 @@ pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
             let dist = ((centroids[j].0 - new_centroids[j].0).powf(2.0) + (centroids[j].1 - new_centroids[j].1).powf(2.0)).sqrt();
             diff += dist;
         }
-        println!("Distance from previous centroid: {}", &diff);
         centroids = new_centroids;
         i += 1; 
     }

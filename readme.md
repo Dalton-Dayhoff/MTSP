@@ -34,9 +34,24 @@ The one problem with installing gurobipy this way is that the full gurobi suite 
 
 There are 3 required python packages (numpy, gurobipy, and matplotlib). The user need not worry about installing these because it is taken care of within the setup function. This is because Rust sometimes loses track of where the packages are within the virtual environment. Meaning it is good to ensure Rust knows where they are before running each time.
 
+# Running the code
+There are currently two major sections of code to run. The milp solver and the k-means clustering section.
 
+## milp
+To generate the problem specified in the networkFlow toml and solve it using gurobipy.
+```bash
+cargo run -- milp run
+```
+To test gurobipy using the framework and the bounds specified in the networkFlow toml.
+```bash
+cargo run -- milp test
+```
 
-
+## k-means clustering
+To run k-means clustering on the problem specified within the genetic toml (this alludes to the future genetic algorithm implementation).
+```bash
+cargo run -- cluster
+```
 # Documentation
 The code base is heavilly documented in both rust and python.
 

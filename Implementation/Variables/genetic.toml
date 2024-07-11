@@ -1,0 +1,4 @@
+[mTSP]
+num_agents = 5
+num_tasks = 40
+world_size = [10.0, 10.0]

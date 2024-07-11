@@ -1,6 +1,11 @@
 use rand;
 use plotters::prelude::*;
 use std::io;
+use std::fs;
+use toml::Value;
+use initilization::k_clustering;
+
+use crate::initilization;
 
 #[derive(Debug)]
 /// A task, aka a city
@@ -106,7 +111,7 @@ impl Tsp {
     /// Draws the TSP or mTSP
     /// 
     /// let _ = Tsp.draw_solution("MTSP".to_string());
-    pub(crate)fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
+    fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
         let name = "Images/".to_owned() + &name + ".svg";
         
         // Create background
@@ -253,7 +258,7 @@ fn update_incidence(num_nodes: &usize, to_node: &usize, from_node: &usize, inc_m
 /// Create a simple TSP
 /// 
 /// Used mostly for debugging/testing
-pub(crate)fn _create_specific_tsp() -> Tsp{
+fn _create_specific_tsp() -> Tsp{
     let tasks = vec![
         Task{ location: (0.5, 1.0)}, 
         Task{ location: (4.5, 3.0)},
@@ -284,7 +289,7 @@ pub(crate)fn _create_specific_tsp() -> Tsp{
 /// Create a simple MTSP
 /// 
 /// Used mostly for debugging/testing
-pub(crate)fn _create_specific_mtsp() -> Tsp{
+fn _create_specific_mtsp() -> Tsp{
     let mut tasks1 = vec![
         Task{ location: (0.5, 1.0)}, 
         Task{ location: (4.5, 3.0)},
@@ -364,7 +369,7 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
 /// Uses previously defined functions to create a simple network flow MTSP implementation
 /// 
 /// Used mostly for debugging/testing
-pub(crate) fn _create_basic_network_flow()-> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)> {
+fn _create_basic_network_flow()-> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)> {
     let prob = _create_specific_mtsp();
     let (distances, costs, mat, other_data) = prob.to_incidence(9, 2);
     Ok((other_data, costs, distances,  mat))
@@ -384,10 +389,31 @@ pub(crate)fn create_random_network_flow(
     cost_multiplyer: usize
 ) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)>{
     let prob = create_random_mtsp(num_agents, num_tasks, world_size);
-    if num_columns < num_tasks{
+    if num_columns < num_tasks + 1{
         num_columns = num_tasks + 1;
     }
     let (distances, costs, mat, other_data) = prob.to_incidence(num_columns, cost_multiplyer);
     Ok((other_data, costs, distances,  mat))
     
+}
+
+pub(crate)fn read_toml_and_run()-> Result<(), Box<dyn std::error::Error>>{
+    let toml_content = fs::read_to_string("Variables/genetic.toml")?;
+
+    let val: Value = toml_content.parse()?;
+    let mtsp_vars = val.get("mTSP").unwrap();
+    let num_agents:usize = mtsp_vars.get("num_agents").unwrap().as_integer().unwrap() as usize;
+    let num_tasks = mtsp_vars.get("num_tasks").unwrap().as_integer().unwrap() as usize;
+    let world_size_array = mtsp_vars.get("world_size").unwrap().as_array().unwrap();
+    let world_size: Vec<f64> = world_size_array.iter()
+        .filter_map(|val| val.as_float())
+        .collect();
+    let problem = create_random_mtsp(num_agents, num_tasks, (world_size[0], world_size[1]));
+    let _ = problem.draw_solution("original_mtsp".to_string());
+        let problems = k_clustering(problem);
+        for i in 0..problems.len(){
+            let label = format!("Agent {}", i);
+            let _ = problems[i].draw_solution(label);
+        }
+    Ok(())
 }
