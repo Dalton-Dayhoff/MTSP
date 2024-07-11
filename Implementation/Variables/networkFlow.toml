@@ -1,6 +1,6 @@
 [mTSP]
 num_agents = 5
-num_tasks = 40
+num_tasks = 30
 cost_multiplyer = 2
 world_size = [10.0, 10.0]
 

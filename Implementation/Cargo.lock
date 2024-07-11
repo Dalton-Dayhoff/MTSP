@@ -11,8 +11,6 @@ dependencies = [
  "plotters-backend",
  "pyo3",
  "rand",
- "serde",
- "serde_derive",
  "toml",
 ]
 

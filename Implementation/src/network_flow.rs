@@ -17,19 +17,25 @@ pub(crate) fn setup() -> PyResult<()> {
     Python::with_gil(|py| {
         // Ensure the correct python version
         assert!(py.version().starts_with("3.12"));
-        
-         // Get the active virtual environment path using virtualenv
+        let operating_system = std::env::consts::OS;
+         // Get the active virtual environment path using virtual env
         let virtual_env_path = std::env::var("VIRTUAL_ENV").unwrap_or_else(|_| {
             panic!("No virtual environment found. Ensure you have an active virtual environment.");
         });
 
         // Construct the path to the site-packages directory
-        let venv_site_packages = format!("{}/lib/python3.12/site-packages", virtual_env_path);
+        let venv_site_packages;
+        if operating_system == "windows"{
+            venv_site_packages = format!("{}/lib/site-packages", virtual_env_path);
+        } else {
+            venv_site_packages = format!("{}/lib/python3.12/site-packages", virtual_env_path);
+        }
+
 
         // Give Rust access to the Python packages in the virtual environment
         let sys = py.import_bound("sys").unwrap();
         sys.getattr("path").unwrap().call_method1("append", (venv_site_packages.clone(),)).unwrap();
-
+        println!("Paths: {:?}", sys.getattr("path").unwrap());
         // Function to install a package to the virtual environment
         fn install_package(package: &str, python_interpreter: &str) {
             let output = Command::new(python_interpreter)
@@ -55,7 +61,13 @@ pub(crate) fn setup() -> PyResult<()> {
             }
         }
         // Check installed packages using pip
-        let python_interpreter = format!("{}/bin/python", virtual_env_path);
+        
+        let python_interpreter;
+        if operating_system == "windows"{
+            python_interpreter = format!("{}/Scripts/python", virtual_env_path);
+        } else{
+            python_interpreter = format!("{}/bin/python", virtual_env_path);
+        }
         let output = Command::new(python_interpreter.clone())
             .arg("-m")
             .arg("pip")
@@ -70,7 +82,7 @@ pub(crate) fn setup() -> PyResult<()> {
         }
 
         // Install required packages if not installed
-        let required_packages = vec!["gurobipy", "numpy", "matplotlib"];
+        let required_packages = vec!["gurobipy", "numpy", "matplotlib", "scipy"];
         let installed_packages = String::from_utf8_lossy(&output.stdout);
         for package in required_packages {
             if !installed_packages.contains(package) {
@@ -202,7 +214,7 @@ pub(crate) fn test_network_flow(
 
     let areas = root_area.split_evenly((2, 2));
     // Create ordered pairs to plot the lines
-    // Score series represents the augmented distnaces used by network flow to encourage less jumping to the end
+    // Score series represents the augmented distances used by network flow to encourage less jumping to the end
     let _score_series: Vec<(f64, f64)> = trial_numbers.clone().into_iter().zip(scores.into_iter()).collect();
     let dist_series: Vec<(f64, f64)> = trial_numbers.clone().into_iter().zip(true_scores.into_iter()).collect();
     let time_series = trial_numbers.clone().into_iter().zip(times.into_iter()).collect();
@@ -265,7 +277,7 @@ pub(crate)fn read_toml(version: String)-> Result<(), Box<dyn std::error::Error>>
         let (score, time, dist) = get_results(data, costs, distances, inc_mat).unwrap();
         println!("Objective Score: {}", score);
         println!("Gurobipy Runtime: {}", time);
-        println!("Total distance travelled: {}", dist);
+        println!("Total distance traveled: {}", dist);
     } else if version == "test" {
         // Get testing variables
         let test_vars = val.get("TestMilp").unwrap();
