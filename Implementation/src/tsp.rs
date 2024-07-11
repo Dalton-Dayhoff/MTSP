@@ -3,9 +3,9 @@ use plotters::prelude::*;
 use std::io;
 use std::fs;
 use toml::Value;
-use initilization::k_clustering;
+use initialization::k_clustering;
 
-use crate::initilization;
+use crate::initialization;
 
 #[derive(Debug)]
 /// A task, aka a city

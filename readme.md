@@ -9,8 +9,8 @@ This solver use gurobi to solve a Network flow implementation of the MTSP.
 This project uses both python and rust. This means much of the setup is handled behind the scenes in order to ensure proper communication between the languages.
 
 ## Rust and Python
-The python version must of the form 3.12.XX.
-The rustup version must be >= 1.27.1.
+The python version must of the form 3.XX.
+The rustup version must be >= 1.2X.X
 
 ## Python Packages
 This code base uses gurobipy for the MILP solver. Using gurobipy to solve any problem that is complicated requires a license. To install this license, first ensure gurobipy is installed using
@@ -24,11 +24,7 @@ grbgetkey <license id here>
 There are 4 required python packages (numpy, scipy, gurobipy, and matplotlib). The user need not worry about installing numpy, scipy, or matplotlib because it is taken care of within the setup function. This is because Rust sometimes loses track of where the packages are within the virtual environment. Meaning it is good to ensure Rust knows where they are before running each time.
 
 ## Rust Crates
-There are 6 required crates that can all be installed using
-```bash
-cargo install <package-name>
-```
-These required packages are: nalgebra (0.33), plotters (0.3.5), plotters-backend (0.3.5), rand (0.8.5), toml (0.8.4), and pyo3 (0.22.0). The first five are common amongst all rust projects and are self explanatory. The last crate, pyo3, allows for communication between python and rust.
+There are 6 required crates: nalgebra (0.33), plotters (0.3.5), plotters-backend (0.3.5), rand (0.8.5), toml (0.8.4), and pyo3 (0.22.0). The first five are common amongst all rust projects and are self explanatory. The last crate, pyo3, allows for communication between python and rust. One of the more useful traits of rust is that when building the code with cargo, it automatically checks for the required crates and installs any that do not exist.ca
 
 ## Virtual Environment
 Setup a python virtual environment.
@@ -65,6 +61,10 @@ cd Implementation
 then run
 ```bash
 cargo doc
+```
+To open the documentation, modify this command
+```bash
+cargo doc --open
 ```
 
 ## Python

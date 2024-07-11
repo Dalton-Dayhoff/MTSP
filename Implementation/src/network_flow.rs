@@ -16,7 +16,7 @@ use crate::tsp::create_random_network_flow;
 pub(crate) fn setup() -> PyResult<()> {
     Python::with_gil(|py| {
         // Ensure the correct python version
-        assert!(py.version().starts_with("3.12"));
+        
         let operating_system = std::env::consts::OS;
          // Get the active virtual environment path using virtual env
         let virtual_env_path = std::env::var("VIRTUAL_ENV").unwrap_or_else(|_| {
@@ -28,14 +28,15 @@ pub(crate) fn setup() -> PyResult<()> {
         if operating_system == "windows"{
             venv_site_packages = format!("{}/lib/site-packages", virtual_env_path);
         } else {
-            venv_site_packages = format!("{}/lib/python3.12/site-packages", virtual_env_path);
+            let version_info = py.version_info();
+            let py_version = format!("python{}.{}", version_info.major, version_info.minor);
+            venv_site_packages = format!("{}/lib/{}/site-packages", virtual_env_path, py_version);
         }
 
 
         // Give Rust access to the Python packages in the virtual environment
         let sys = py.import_bound("sys").unwrap();
         sys.getattr("path").unwrap().call_method1("append", (venv_site_packages.clone(),)).unwrap();
-        println!("Paths: {:?}", sys.getattr("path").unwrap());
         // Function to install a package to the virtual environment
         fn install_package(package: &str, python_interpreter: &str) {
             let output = Command::new(python_interpreter)
@@ -113,7 +114,7 @@ pub(crate) fn get_results(
     // Get the python file as a string
     let py_functions = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/Solvers/Network_Flow/NetworkFlow.py"
+        "/Solvers/Network_Flow/network_flow.py"
     ));
     let (score, time, dist) = Python::with_gil(|py| {
         // Set up variables class
@@ -121,7 +122,7 @@ pub(crate) fn get_results(
         let py_module = PyModule::from_code_bound(
             py, 
             py_functions, 
-            "NetworkFlow.py", 
+            "network_flow.py", 
             "Variables"
         )
         .unwrap();

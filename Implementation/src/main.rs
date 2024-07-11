@@ -2,7 +2,7 @@ use network_flow::{setup, read_toml};
 use tsp::read_toml_and_run;
 
 mod tsp;
-mod initilization;
+mod initialization;
 mod network_flow;
 
 fn main() {
