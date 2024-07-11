@@ -51,7 +51,7 @@ To run k-means clustering on the problem specified within the genetic toml (this
 cargo run -- cluster
 ```
 # Documentation
-The code base is heavily documented in both rust and python.
+The code base is documented in both rust and python.
 
 ## Rust
 If one desires, the rust documentation can be compiled into a common form using rustdoc and cargo. Fist go into the Implementation folder

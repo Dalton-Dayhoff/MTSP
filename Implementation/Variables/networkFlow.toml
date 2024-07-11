@@ -10,6 +10,6 @@ num_columns = 40
 [TestMilp]
 num_trials = 6
 max_tasks = 60
-min_tasks = 40
-max_agents = 6
-min_agents = 6
+min_tasks = 30
+max_agents = 5
+min_agents = 5
