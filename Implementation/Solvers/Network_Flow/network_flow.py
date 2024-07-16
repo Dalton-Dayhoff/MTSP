@@ -197,10 +197,12 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
     m = gp.Model("NewModel")
     m.setParam("OutputFlag", 1)
     x = m.addVars(prob_vars.num_edges, vtype=GRB.BINARY)
+    print("Made Model")
     # Constraints
     start = timeit.timeit()
     z = gp.MVar.fromlist(x.select())
     m.addMConstr(inc_mat, z, "=", b)
+    print("Added Flow Constraints")
 
     ## Create groups
     ### Edge Groups
@@ -234,6 +236,7 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
     ## Group Constraint
     b_edge_groups = np.ones(len(edge_group_mat))
     m.addMConstr(edge_group_mat, z, "<=", b_edge_groups)
+    print("Added Group Constraints")
 
     # Objective
     m.setMObjective(
