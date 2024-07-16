@@ -1,6 +1,6 @@
 [mTSP]
-num_agents = 5
-num_tasks = 30
+num_agents = 8
+num_tasks = 25
 cost_multiplyer = 2
 world_size = [10.0, 10.0]
 
@@ -8,8 +8,8 @@ world_size = [10.0, 10.0]
 num_columns = 40
 
 [TestMilp]
-num_trials = 6
-max_tasks = 30
-min_tasks = 10
-max_agents = 5
-min_agents = 5
+num_trials = 3
+max_tasks = 150
+min_tasks = 100
+max_agents = 4
+min_agents = 4

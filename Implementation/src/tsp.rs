@@ -2,8 +2,10 @@ use rand;
 use plotters::prelude::*;
 use std::io;
 use std::fs;
+use std::time::Duration;
 use toml::Value;
 use initialization::k_clustering;
+use std::time::Instant;
 
 use crate::initialization;
 
@@ -387,13 +389,17 @@ pub(crate)fn create_random_network_flow(
     world_size: (f64, f64), 
     mut num_columns: usize, 
     cost_multiplyer: usize
-) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)>{
+) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>, Duration, Duration)>{
+    let mut time = Instant::now();
     let prob = create_random_mtsp(num_agents, num_tasks, world_size);
+    let creation_time = time.elapsed();
     if num_columns < num_tasks + 1{
         num_columns = num_tasks + 1;
     }
+    time = Instant::now();
     let (distances, costs, mat, other_data) = prob.to_incidence(num_columns, cost_multiplyer);
-    Ok((other_data, costs, distances,  mat))
+    let incidence_time = time.elapsed();
+    Ok((other_data, costs, distances,  mat, creation_time, incidence_time))
     
 }
 

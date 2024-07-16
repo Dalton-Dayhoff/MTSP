@@ -4,6 +4,7 @@ import numpy as np
 from gurobipy import GRB
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
+import timeit
 
 class Variables:
     '''
@@ -197,6 +198,7 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
     m.setParam("OutputFlag", 1)
     x = m.addVars(prob_vars.num_edges, vtype=GRB.BINARY)
     # Constraints
+    start = timeit.timeit()
     z = gp.MVar.fromlist(x.select())
     m.addMConstr(inc_mat, z, "=", b)
 
@@ -243,7 +245,8 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
         xc=z,
         sense=gp.GRB.MINIMIZE
     )
-
+    end = timeit.timeit()
+    constraint_time = start- end
     m.optimize()
     value = m.ObjVal
     time = m.Runtime
@@ -255,4 +258,4 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
         if edge > 0:
             cost += distances[i]
 
-    return value, time, cost
+    return value, time, cost, constraint_time

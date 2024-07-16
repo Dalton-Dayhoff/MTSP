@@ -1,9 +1,10 @@
 
 use std::process::Command;
-use full_palette::DEEPPURPLE;
+use full_palette::{DEEPORANGE_800, DEEPPURPLE, GREEN_900, PINK_400};
 use plotters::prelude::*;
 use pyo3::prelude::*;
 use pyo3::prelude::PyResult;
+use pyo3::types::PyList;
 use rand::Rng;
 use std::fs;
 use toml::Value;
@@ -108,7 +109,7 @@ pub(crate) fn get_results(
     costs: Vec<f64>, 
     distances: Vec<f64>, 
     inc_mat: Vec<Vec<i32>>
-) -> PyResult<(f64, f64, f64)>{
+) -> PyResult<(f64, f64, f64, f64)>{
     // Start Python
     pyo3::prepare_freethreaded_python();
     // Get the python file as a string
@@ -116,7 +117,7 @@ pub(crate) fn get_results(
         env!("CARGO_MANIFEST_DIR"),
         "/Solvers/Network_Flow/network_flow.py"
     ));
-    let (score, time, dist) = Python::with_gil(|py| {
+    let (score, time, dist, const_create) = Python::with_gil(|py| {
         // Set up variables class
         // Read the string python file and pull out variables class
         let py_module = PyModule::from_code_bound(
@@ -139,16 +140,23 @@ pub(crate) fn get_results(
         // Solve the given problem using MILP
         // Convert to python types
         let costs_py = costs.into_py(py);
-        let inc_mat_py = inc_mat.into_py(py);
+        // let inc_mat_py = inc_mat.into_py(py);
         let variables_py = variables.into_py(py);
         let distances_py = distances.into_py(py);
+        // Chunking `inc_mat` into smaller parts
+        let chunk_size = 100; // Adjust based on your data size and memory constraints
+        let mut chunks = Vec::new();
+        for chunk in inc_mat.chunks(chunk_size) {
+            let py_chunk: Py<PyList> = PyList::new_bound(py, chunk.iter().map(|row| row.to_object(py))).into();
+            chunks.push(py_chunk);
+        }
         // Get the function to solve
         let solver: Py<PyAny> = py_module.getattr("solve_all_constraints").unwrap().into();
-        let result = solver.call1(py, (costs_py, distances_py, inc_mat_py, variables_py));
+        let result = solver.call1(py, (costs_py, distances_py, chunks, variables_py));
         result.unwrap().extract(py).unwrap()
     });
     
-    Ok((score, time, dist))
+    Ok((score, time, dist, const_create))
 }
 
 /// Used to test the network flow implementation
@@ -172,7 +180,7 @@ pub(crate) fn test_network_flow(
 ) {
     // Initialize data storage
     let mut scores: Vec<f64> = Vec::new();
-    let mut times: Vec<f64> = Vec::new();
+    let mut times: Vec<Vec<f64>> = Vec::new();
     let mut true_scores: Vec<f64> = Vec::new();
     let mut tasks: Vec<f64> = Vec::new();
     let mut agents: Vec<f64> = Vec::new();
@@ -191,7 +199,7 @@ pub(crate) fn test_network_flow(
         } else{
             num_agents = min_agents;
         }
-        let (data, costs, distances,  inc_mat) = create_random_network_flow(
+        let (data, costs, distances,  inc_mat, creation_time, inc_time) = create_random_network_flow(
             num_agents.clone(), 
             num_tasks.clone(), 
             world_size, 
@@ -199,17 +207,18 @@ pub(crate) fn test_network_flow(
             cost_multiplyer
         )
         .unwrap();
-        let (score, runtime, dist) = get_results(data, costs,distances,  inc_mat).unwrap();
+        let (score, runtime, dist, const_create) = get_results(data, costs,distances,  inc_mat).unwrap();
+        let trial_times = vec![runtime, creation_time.as_secs_f64(), inc_time.as_secs_f64() ,const_create];
         tasks.push(num_tasks as f64);
         agents.push(num_agents as f64);
         scores.push(score);
-        times.push(runtime);
+        times.push(trial_times);
         true_scores.push(dist);
     }
     let trial_numbers: Vec<f64> = (0..num_trials).map(|x| x as f64).collect();
 
     // Display data
-    let root_area = BitMapBackend::new("images/Scores and RunTimes.png", (1000, 600))
+    let root_area = BitMapBackend::new("Images/Scores and RunTimes.png", (1000, 600))
         .into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
@@ -218,31 +227,62 @@ pub(crate) fn test_network_flow(
     // Score series represents the augmented distances used by network flow to encourage less jumping to the end
     let _score_series: Vec<(f64, f64)> = trial_numbers.clone().into_iter().zip(scores.into_iter()).collect();
     let dist_series: Vec<(f64, f64)> = trial_numbers.clone().into_iter().zip(true_scores.into_iter()).collect();
-    let time_series = trial_numbers.clone().into_iter().zip(times.into_iter()).collect();
+    let mut time_series: Vec<Vec<(f64, f64)>> = vec![vec![], vec![], vec![], vec![]];
+    
+    for (i, inner_vec) in times.iter().enumerate() {
+        for (j, &time) in inner_vec.iter().enumerate() {
+            time_series[j].push((trial_numbers[i], time));
+        }
+    }
     let task_series: Vec<(f64, f64)> = trial_numbers.clone().into_iter().zip(tasks.into_iter()).collect();
     let agent_series: Vec<(f64, f64)> = trial_numbers.into_iter().zip(agents.into_iter()).collect();
-    let data_series = [dist_series, time_series, task_series, agent_series];
+    let data_series = [dist_series, time_series[0].clone(), time_series[1].clone(), time_series[2].clone(), time_series[3].clone(), task_series, agent_series];
     // Setup the extra data for plotting
     let color = &DEEPPURPLE;
-    let labels = ["Distance", "RunTimes", "Tasks", "Agents"];
+    let labels = ["Distance", "Times", "Tasks", "Agents"];
+    let time_labels = ["Gurobi", "Problem", "Incidence", "Constraint"];
+    let colors = vec![&CYAN, &PINK_400, &GREEN_900, &DEEPORANGE_800];
     // Plot
-    for (i, area) in areas.iter().enumerate(){
+    let mut j = 0;
+    for (k, label) in labels.iter().enumerate(){
+        let area = &areas[k];
         let mut chart = ChartBuilder::on(area)
             .margin(50)
-            .caption(format!("{}", labels[i]), ("sans-serif", 20).into_font())
+            .caption(format!("{}", label), ("sans-serif", 20).into_font())
             .x_label_area_size(5)
             .y_label_area_size(30)
-            .build_cartesian_2d(0.0..(num_trials - 1) as f64, 0.0..data_series[i].iter().map(|&(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(10.0))
+            .build_cartesian_2d(0.0..(num_trials - 1) as f64, 0.0..data_series[j].iter().map(|&(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(10.0))
             .unwrap();
 
         chart.configure_mesh()
             .draw()
             .unwrap();
-
-        chart.draw_series(LineSeries::new(
-            data_series[i].clone(),
-            color
-        )).unwrap();
+        if j > 0 && j < 5{
+            for (i, time_label) in time_labels.iter().enumerate(){
+                let cur_color = colors[i];
+                chart.draw_series(LineSeries::new(
+                    data_series[j].clone(),
+                    cur_color.clone()
+                )).unwrap()
+                .label(*time_label)
+                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], cur_color.clone()
+            ));
+                j += 1;
+            }
+            chart.configure_series_labels()
+                .border_style(&BLACK)
+                .position(SeriesLabelPosition::UpperLeft)
+                .legend_area_size(5)
+                .background_style(&WHITE.mix(0.8))
+                .draw()
+                .unwrap();
+        } else{
+            chart.draw_series(LineSeries::new(
+                data_series[j].clone(),
+                 color
+            )).unwrap();
+            j += 1;
+        }
     }
     root_area.present().unwrap();
 }
@@ -268,17 +308,21 @@ pub(crate)fn read_toml(version: String)-> Result<(), Box<dyn std::error::Error>>
         
 
         // Create Problem
-        let (data, costs, distances,  inc_mat) = create_random_network_flow(
+        let (data, costs, distances,  inc_mat, creation_time, inc_time) = 
+            create_random_network_flow(
             num_agents.clone(), 
             num_tasks.clone(), 
             (world_size[0], world_size[1]), 
             num_columns.clone(), 
             cost_multiplyer
         ).unwrap();
-        let (score, time, dist) = get_results(data, costs, distances, inc_mat).unwrap();
+        let (score, time, dist, constraints_creation) = get_results(data, costs, distances, inc_mat).unwrap();
         println!("Objective Score: {}", score);
         println!("Gurobipy Runtime: {}", time);
         println!("Total distance traveled: {}", dist);
+        println!("Problem Creation: {}", creation_time.as_secs_f64());
+        println!("Incidence Creation: {}", inc_time.as_secs_f64());
+        println!("Constraint Creation: {}", constraints_creation);
     } else if version == "test" {
         // Get testing variables
         let test_vars = val.get("TestMilp").unwrap();
