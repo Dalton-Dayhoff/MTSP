@@ -4,7 +4,6 @@ use full_palette::{DEEPORANGE_800, DEEPPURPLE, GREEN_900, PINK_400};
 use plotters::prelude::*;
 use pyo3::prelude::*;
 use pyo3::prelude::PyResult;
-use pyo3::types::PyList;
 use rand::Rng;
 use std::fs;
 use toml::Value;
@@ -119,7 +118,7 @@ pub(crate) fn get_results(
         env!("CARGO_MANIFEST_DIR"),
         "/Solvers/Network_Flow/network_flow.py"
     ));
-    let (score, time, dist, const_create) = Python::with_gil(|py| {
+    let stuff = Python::with_gil(|py| {
         // Set up variables class
         // Read the string python file and pull out variables class
         let py_module = PyModule::from_code_bound(
@@ -153,8 +152,7 @@ pub(crate) fn get_results(
         let result = solver.call1(py, (costs_py, distances_py, rows_py, cols_py, values_py, variables_py));
         result.unwrap().extract(py).unwrap()
     });
-    
-    Ok((score, time, dist, const_create))
+    Ok(stuff)
 }
 
 /// Used to test the network flow implementation
