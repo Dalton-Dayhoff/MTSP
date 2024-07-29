@@ -108,7 +108,9 @@ pub(crate) fn get_results(
     data: Vec<usize>, 
     costs: Vec<f64>, 
     distances: Vec<f64>, 
-    inc_mat: Vec<Vec<i32>>
+    rows: Vec<usize>,
+    cols: Vec<usize>,
+    values: Vec<i64>
 ) -> PyResult<(f64, f64, f64, f64)>{
     // Start Python
     pyo3::prepare_freethreaded_python();
@@ -140,19 +142,15 @@ pub(crate) fn get_results(
         // Solve the given problem using MILP
         // Convert to python types
         let costs_py = costs.into_py(py);
-        // let inc_mat_py = inc_mat.into_py(py);
         let variables_py = variables.into_py(py);
         let distances_py = distances.into_py(py);
-        // Chunking `inc_mat` into smaller parts
-        let chunk_size = 100; // Adjust based on your data size and memory constraints
-        let mut chunks = Vec::new();
-        for chunk in inc_mat.chunks(chunk_size) {
-            let py_chunk: Py<PyList> = PyList::new_bound(py, chunk.iter().map(|row| row.to_object(py))).into();
-            chunks.push(py_chunk);
-        }
+        let rows_py = rows.into_py(py);
+        let cols_py = cols.into_py(py);
+        let values_py = values.into_py(py);
+
         // Get the function to solve
         let solver: Py<PyAny> = py_module.getattr("solve_all_constraints").unwrap().into();
-        let result = solver.call1(py, (costs_py, distances_py, chunks, variables_py));
+        let result = solver.call1(py, (costs_py, distances_py, rows_py, cols_py, values_py, variables_py));
         result.unwrap().extract(py).unwrap()
     });
     
@@ -199,7 +197,7 @@ pub(crate) fn test_network_flow(
         } else{
             num_agents = min_agents;
         }
-        let (data, costs, distances,  inc_mat, creation_time, inc_time) = create_random_network_flow(
+        let (data, costs, distances,  rows, cols, values, creation_time, inc_time) = create_random_network_flow(
             num_agents.clone(), 
             num_tasks.clone(), 
             world_size, 
@@ -207,7 +205,7 @@ pub(crate) fn test_network_flow(
             cost_multiplyer
         )
         .unwrap();
-        let (score, runtime, dist, const_create) = get_results(data, costs,distances,  inc_mat).unwrap();
+        let (score, runtime, dist, const_create) = get_results(data, costs,distances, rows, cols, values).unwrap();
         let trial_times = vec![runtime, creation_time.as_secs_f64(), inc_time.as_secs_f64() ,const_create];
         tasks.push(num_tasks as f64);
         agents.push(num_agents as f64);
@@ -308,7 +306,7 @@ pub(crate)fn read_toml(version: String)-> Result<(), Box<dyn std::error::Error>>
         
 
         // Create Problem
-        let (data, costs, distances,  inc_mat, creation_time, inc_time) = 
+        let (data, costs, distances,  rows, cols, values, creation_time, inc_time) = 
             create_random_network_flow(
             num_agents.clone(), 
             num_tasks.clone(), 
@@ -316,7 +314,7 @@ pub(crate)fn read_toml(version: String)-> Result<(), Box<dyn std::error::Error>>
             num_columns.clone(), 
             cost_multiplyer
         ).unwrap();
-        let (score, time, dist, constraints_creation) = get_results(data, costs, distances, inc_mat).unwrap();
+        let (score, time, dist, constraints_creation) = get_results(data, costs, distances, rows, cols, values).unwrap();
         println!("Objective Score: {}", score);
         println!("Gurobipy Runtime: {}", time);
         println!("Total distance traveled: {}", dist);

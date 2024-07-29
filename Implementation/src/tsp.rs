@@ -6,6 +6,7 @@ use std::time::Duration;
 use toml::Value;
 use initialization::k_clustering;
 use std::time::Instant;
+use nalgebra_sparse::{coo::*, csr::CsrMatrix, csc::CscMatrix};
 
 use crate::initialization;
 
@@ -62,7 +63,7 @@ impl Clone for Agent{
         Self {depot_location: self.depot_location.clone(), current: self.current.clone(), tour: self.tour.clone() }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A multiple traveling salesmen problem
 pub(crate)struct Tsp {
     /// List of all tasks
@@ -167,7 +168,102 @@ impl Tsp {
         Ok(())
     }
 
-    /// Creates the network flow formualtion of the mTSP
+    pub fn to_incidence_simplified(
+        self,
+        columns_of_graph: usize,
+        early_ender: usize
+    ) -> (Vec<f64>, Vec<f64>, Vec<usize>, Vec<usize>, Vec<i64>, Vec<usize>){
+        let nodes_in_graph = self.agents.len()*2 + (columns_of_graph - 2)*self.tasks.len();
+        // Define edges
+        let mut edge_costs: Vec<f64>  = Vec::new();
+        let mut distances: Vec<f64> = Vec::new();
+        let mut rows: Vec<usize> = Vec::new();
+        let mut columns: Vec<usize> = Vec::new();
+        let mut values: Vec<i64> = Vec::new();
+        let mut edge: usize = 0;
+
+        // first set of edges is from salesmen 1 to all the cities
+        let mut to_node = self.agents.len();
+        let mut from_node = 0;
+        for agent in &self.agents{
+            for task in &self.tasks{
+                // Get cost
+                let task_location = task.location;
+                let dist = agent.calc_distance(task_location);
+                edge_costs.push(dist);
+                distances.push(dist);
+
+                // Incidence matrix
+                columns.push(edge);
+                columns.push(edge);
+                rows.push(to_node);
+                rows.push(from_node);
+                values.push(-1);
+                values.push(1);
+
+                edge += 1;
+                to_node += 1;
+            }
+            from_node += 1;
+            to_node = self.agents.len();
+        }
+        to_node = self.agents.len() + self.tasks.len();
+        // This iterates over all the edges that directly connect cities together and cities the ending depots
+        for i in 0..columns_of_graph - 2{
+            for task in &self.tasks{
+                for next_task in &self.tasks{
+                    if i == columns_of_graph - 3{
+                        break;
+                    }
+                    // Cost
+                    let dist = task.calc_distance(next_task.location);
+                    edge_costs.push(dist);
+                    distances.push(dist);
+
+                    // Incidence 
+                    columns.push(edge);
+                    columns.push(edge);
+                    rows.push(to_node);
+                    rows.push(from_node);
+                    values.push(-1);
+                    values.push(1);
+                
+                    edge += 1;
+                    to_node += 1;
+                }
+                // Connect to end nodes
+                // Set the node the edge is going to
+                to_node = self.agents.len() + (columns_of_graph - 2)*self.tasks.len();
+                for agent in &self.agents{
+                    // Cost
+                    let dist = task.calc_distance(agent.depot_location);
+                    let multiplyer = if i >= 10 {1.0} else {(10 - i) as f64};
+                    edge_costs.push((multiplyer * early_ender as f64 * (columns_of_graph - i) as f64) *dist);
+                    distances.push(dist);
+                    // Incidence 
+                    columns.push(edge);
+                    columns.push(edge);
+                    rows.push(to_node);
+                    rows.push(from_node);
+                    values.push(-1);
+                    values.push(1);
+                
+                    edge += 1;
+                    to_node += 1;
+                }
+
+                // Set the nodes the edge is connected to
+                to_node = self.agents.len() + (i+1)*self.tasks.len();
+                from_node += 1;
+            }
+            // Set the node the edge is going to
+            to_node = self.agents.len() + (i+2)*self.tasks.len();
+        }
+        let other_data = vec![self.tasks.len(), self.agents.len(), columns_of_graph - 2, nodes_in_graph, edge_costs.len()];  
+        return (distances, edge_costs, rows, columns, values, other_data);
+    }
+
+    /// Creates the network flow formulation of the mTSP
     /// 
     /// * 'columns_of_graph' - The total number of columns
     /// * 'early_ender' - The extra multiplyer to adjust the costs of an agents route ending earlier in the graph
@@ -389,7 +485,7 @@ pub(crate)fn create_random_network_flow(
     world_size: (f64, f64), 
     mut num_columns: usize, 
     cost_multiplyer: usize
-) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>, Duration, Duration)>{
+) -> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<usize>, Vec<usize>, Vec<i64>, Duration, Duration)>{
     let mut time = Instant::now();
     let prob = create_random_mtsp(num_agents, num_tasks, world_size);
     let creation_time = time.elapsed();
@@ -397,9 +493,10 @@ pub(crate)fn create_random_network_flow(
         num_columns = num_tasks + 1;
     }
     time = Instant::now();
-    let (distances, costs, mat, other_data) = prob.to_incidence(num_columns, cost_multiplyer);
+    let (distances, costs, rows, cols, values, other_data) = prob.to_incidence_simplified(num_columns, cost_multiplyer);
+
     let incidence_time = time.elapsed();
-    Ok((other_data, costs, distances,  mat, creation_time, incidence_time))
+    Ok((other_data, costs, distances,  rows, cols, values, creation_time, incidence_time))
     
 }
 

@@ -5,6 +5,7 @@ from gurobipy import GRB
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 import timeit
+from scipy.sparse import csr_matrix
 
 class Variables:
     '''
@@ -179,7 +180,7 @@ def solve_basic(costs, inc_mat, prob_vars: Variables) -> Tuple[float]:
     plt.show()
     return value, time
 
-def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tuple[float]:
+def solve_all_constraints(costs, distances, rows, cols, values, prob_vars: Variables) -> Tuple[float]:
     '''Solve a network flow problem
     Arguments:
         costs: The list of all edges costs
@@ -187,6 +188,8 @@ def solve_all_constraints(costs, distances, inc_mat, prob_vars: Variables) -> Tu
         inc_mat: The incidence matrix
         prob_vars: All the problem variables
     '''
+
+    inc_mat = np.array(csr_matrix((values, (rows, cols))).toarray()).T
     b = np.zeros(prob_vars.num_nodes)
     # There are two agents in this problem, sources are 1 and sinks are -1
     b[0:prob_vars.num_agents] = np.ones(prob_vars.num_agents)
