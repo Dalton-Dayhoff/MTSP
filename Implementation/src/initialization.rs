@@ -2,7 +2,7 @@ use std::f64::INFINITY;
 
 use crate::tsp::*;
 
-pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
+pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
     let number_of_clusters = problem.agents.len();
     // Initilize centroid to be agents
     // This was done to push the centroids towards the agents when the agents were not part of centroid calculation
@@ -115,20 +115,26 @@ pub fn k_clustering(problem: Tsp) -> Vec<Tsp>{
         i += 1; 
     }
     // Create the vector Traveling salesmen problems to solve individually
-    let mut seperated_problems: Vec<Tsp> = vec![];
+    let mut task_lists: Vec<Vec<Task>> = Vec::new();
     for cluster in seperated_task_list{
-        seperated_problems.push(Tsp{
-            tasks: cluster.task_list, 
-            agents: vec![cluster.agent], 
-            world_size: problem.world_size, 
-            tours: Vec::new(), 
-            total_distances: Vec::new()})
+        task_lists.push(cluster.task_list);
     }
-    for i in 0..seperated_problems.len(){
-        seperated_problems[i].agents[0].tour = seperated_problems[i].tasks.clone();
-        seperated_problems[i].tours = seperated_problems[i].calc_tours();
-        seperated_problems[i].total_distances = seperated_problems[i].calc_all_distance();
-    }
-    seperated_problems
+    task_lists
+
+    // let mut seperated_problems: Vec<Tsp> = vec![];
+    // for cluster in seperated_task_list{
+    //     seperated_problems.push(Tsp{
+    //         tasks: cluster.task_list, 
+    //         agents: vec![cluster.agent], 
+    //         world_size: problem.world_size, 
+    //         tours: Vec::new(), 
+    //         total_distances: Vec::new()})
+    // }
+    // for i in 0..seperated_problems.len(){
+    //     seperated_problems[i].agents[0].tour = seperated_problems[i].tasks.clone();
+    //     seperated_problems[i].tours = seperated_problems[i].calc_tours();
+    //     seperated_problems[i].total_distances = seperated_problems[i].calc_all_distance();
+    // }
+    // seperated_problems
 
 }

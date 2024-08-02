@@ -1,5 +1,7 @@
 use rand;
 use plotters::prelude::*;
+use core::task;
+use std::collections::HashSet;
 use std::io;
 use std::fs;
 use std::time::Duration;
@@ -32,6 +34,12 @@ impl Task {
 impl Clone for Task{
     fn clone(&self) -> Self {
         Self { location: self.location.clone() }
+    }
+}
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.location == other.location
     }
 }
 
@@ -80,6 +88,31 @@ pub(crate)struct Tsp {
 }
 
 impl Tsp {
+
+    fn get_task_index(&self, node_index: usize) -> usize {
+        let num_tasks = self.tasks.len();
+        let num_agents = self.agents.len();
+        let mut task_number = node_index - num_agents;
+        task_number %= num_tasks;
+        return task_number;
+    }
+
+    fn in_same_group(&self, to_node: usize, from_node: usize, grouped_tasks: &Vec<Vec<Task>>) -> bool{
+        let to_task_ind = self.get_task_index(to_node);
+        let from_task_ind = self.get_task_index(from_node);
+        for tasks in grouped_tasks{
+            let to_bool = tasks.contains(&self.tasks[to_task_ind]);
+            let from_bool = tasks.contains(&self.tasks[from_task_ind]);
+            match (to_bool, from_bool) {
+                (true, true) => return true,
+                (false, true) => return false,
+                (true, false) => return false,
+                (false, false) => continue
+            }
+        }
+        return false;
+    }
+
     /// Finds the total tour length of each tour
     /// 
     /// Tsp.total_distances = self.calc_all_distance();
@@ -268,7 +301,7 @@ impl Tsp {
     /// * 'columns_of_graph' - The total number of columns
     /// * 'early_ender' - The extra multiplyer to adjust the costs of an agents route ending earlier in the graph
     ///     This means an agent collects less tasks than the other agent(s)
-    pub fn to_incidence(
+    pub fn _to_incidence(
         self, 
         columns_of_graph: usize, 
         early_ender: usize
@@ -291,7 +324,7 @@ impl Tsp {
                 distances.push(dist);
 
                 // Incidence matrix
-                update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
+                _update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
                 to_node += 1;
             }
             from_node += 1;
@@ -311,7 +344,7 @@ impl Tsp {
                     distances.push(dist);
 
                     // Incidence 
-                    update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
+                    _update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
                     to_node += 1;
                 }
                 // Connect to end nodes
@@ -324,7 +357,7 @@ impl Tsp {
                     edge_costs.push((multiplyer * early_ender as f64 * (columns_of_graph - i) as f64) *dist);
                     distances.push(dist);
                     // Incidence 
-                    update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
+                    _update_incidence(&nodes_in_graph, &to_node, &from_node, &mut incidence_mat);
                     to_node += 1;
                 }
 
@@ -346,7 +379,7 @@ impl Tsp {
 /// * 'to_node' - The node the edge is going to
 /// * 'from_node' - The node the edge is coming from
 /// * 'inc_mat' - The current incidence matrix
-fn update_incidence(num_nodes: &usize, to_node: &usize, from_node: &usize, inc_mat: &mut Vec<Vec<i32>>) {
+fn _update_incidence(num_nodes: &usize, to_node: &usize, from_node: &usize, inc_mat: &mut Vec<Vec<i32>>) {
     let mut new_col = vec![0; *num_nodes ];
     new_col[*to_node] = -1;
     new_col[*from_node] = 1;
@@ -469,7 +502,7 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
 /// Used mostly for debugging/testing
 fn _create_basic_network_flow()-> io::Result<(Vec<usize>, Vec<f64>, Vec<f64>, Vec<Vec<i32>>)> {
     let prob = _create_specific_mtsp();
-    let (distances, costs, mat, other_data) = prob.to_incidence(9, 2);
+    let (distances, costs, mat, other_data) = prob._to_incidence(9, 2);
     Ok((other_data, costs, distances,  mat))
 }
 
@@ -512,11 +545,11 @@ pub(crate)fn read_toml_and_run()-> Result<(), Box<dyn std::error::Error>>{
         .filter_map(|val| val.as_float())
         .collect();
     let problem = create_random_mtsp(num_agents, num_tasks, (world_size[0], world_size[1]));
-    let _ = problem.draw_solution("original_mtsp".to_string());
-        let problems = k_clustering(problem);
-        for i in 0..problems.len(){
-            let label = format!("Agent {}", i);
-            let _ = problems[i].draw_solution(label);
-        }
+    // let _ = problem.draw_solution("original_mtsp".to_string());
+    //     let problems = k_clustering(problem);
+    //     for i in 0..problems.len(){
+    //         let label = format!("Agent {}", i);
+    //         let _ = problems[i].draw_solution(label);
+    //     }
     Ok(())
 }
