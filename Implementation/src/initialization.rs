@@ -1,28 +1,89 @@
 use std::f64::INFINITY;
 
+use rand::Rng;
+
 use crate::tsp::*;
+
+
+struct Cluster{
+    task_list: Vec<Task>,
+    agent: Agent,
+    centroid: (f64, f64),
+    centroid_sums: (f64, f64),
+    std_dev: f64,
+    dev_sum: f64
+}
+impl Cluster {
+    fn add_task(&mut self, task: Task) {
+        let pos = task.location;
+        self.task_list.push(task);
+        // Update metrics 
+        self.centroid_sums.0 += pos.0;
+        self.centroid_sums.1 += pos.1;
+        self.centroid = (
+            self.centroid_sums.0 / self.task_list.len() as f64, 
+            self.centroid_sums.1 / self.task_list.len() as f64
+        );
+        let x_dif = (pos.0 - self.centroid.0).abs();
+        let y_dif = (pos.1 - self.centroid.1).abs(); 
+        let dist = (x_dif.exp2() + y_dif.exp2()).sqrt();
+        self.dev_sum += dist;
+        self.std_dev = self.dev_sum / self.task_list.len() as f64;
+    }
+
+    fn remove_task(&mut self, task_ind: usize) -> Task{
+        let task = self.task_list.remove(task_ind);
+        // Update metrics
+        let pos = task.location;
+        let x_dif = (pos.0 - self.centroid.0).abs();
+        let y_dif = (pos.1 - self.centroid.1).abs(); 
+        let dist = (x_dif.exp2() + y_dif.exp2()).sqrt();
+        self.dev_sum -= dist;
+        self.std_dev = self.dev_sum / self.task_list.len() as f64;
+        self.centroid_sums.0 -= pos.0;
+        self.centroid_sums.1 -= pos.1;
+        self.centroid = (
+            self.centroid_sums.0 / self.task_list.len() as f64, 
+            self.centroid_sums.1 / self.task_list.len() as f64
+        );
+        return task;
+
+    }
+}
+impl Clone for Cluster {
+    fn clone(&self) -> Self {
+        Self { 
+            task_list: self.task_list.clone(), 
+            agent: self.agent.clone(), 
+            centroid: self.centroid.clone(),
+            centroid_sums: self.centroid_sums.clone(),
+            std_dev: self.std_dev.clone(),
+            dev_sum: self.dev_sum.clone() 
+        }
+}
+}
 
 pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
     let number_of_clusters = problem.agents.len();
     // Initilize centroid to be agents
     // This was done to push the centroids towards the agents when the agents were not part of centroid calculation
     // Could play with this for different results
+
     let mut centroids: Vec<(f64, f64)> = problem.agents.iter().map(|agent| agent.depot_location).collect();
 
     let mut diff = 1.0;
     let mut i = 0;
-    struct Cluster{
-        task_list: Vec<Task>,
-        agent: Agent
-    }
-    impl Clone for Cluster {
-        fn clone(&self) -> Self {
-        Self { task_list: self.task_list.clone(), agent: self.agent.clone() }
-    }
-    }
+
     let mut seperated_task_list: Vec<Cluster> = Vec::new();
     for j in 0..number_of_clusters{
-        seperated_task_list.push(Cluster{task_list: Vec::new(), agent: problem.agents[j].clone()});
+        seperated_task_list.push(Cluster{
+            task_list: Vec::new(), 
+            agent: problem.agents[j].clone(), 
+            centroid: (0.0, 0.0),
+            centroid_sums: (0.0, 0.0),
+            std_dev: 0.0,
+            dev_sum: 0.0
+        });
     }
     let initialize_task_list = seperated_task_list.clone();
     while diff != 0.0 && i < problem.agents.len()*10{
@@ -34,7 +95,7 @@ pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
                 distances.push(task.calc_distance(centroid));
             }
             let (min_ind, _) = distances.iter().enumerate().min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap();
-            seperated_task_list[min_ind].task_list.push(task.clone());
+            seperated_task_list[min_ind].add_task(task.clone());
         }
         // Push groups towards closer size
         // Comment this for loop out for only dense data
@@ -57,28 +118,17 @@ pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
                     }
                 }
             }
-            let moved_task = seperated_task_list[max_ind].task_list.remove(closest_task_ind);
-            seperated_task_list[closest_list_ind].task_list.push(moved_task);
+            let moved_task = seperated_task_list[max_ind].remove_task(closest_task_ind);
+            seperated_task_list[closest_list_ind].add_task(moved_task);
         }
         
-        // Find centroids of groups, without using the agents
-        let mut new_centroids = Vec::new();
-        for cluster in seperated_task_list.clone(){
-            let (sum_x, sum_y): (f64, f64) = cluster
-                .task_list
-                .iter()
-                .map(|task| task.location)
-                .fold((0.0, 0.0), |(acc_x, acc_y), (x, y)| (acc_x + x, acc_y + y));
-            let new_centroid = (sum_x/(cluster.task_list.len() as f64), sum_y/(cluster.task_list.len() as f64));
-            new_centroids.push(new_centroid);
-        }
         // Assign agents to closest centroids
         let mut possible_centroid_indecies =Vec::from_iter(0..number_of_clusters);
         for agent in &problem.agents{
             let mut min_dist = INFINITY as f64;
             let mut index_of_possible_centroids = 0;
             for j in &possible_centroid_indecies{
-                let centroid = new_centroids[*j];
+                let centroid = seperated_task_list[*j].centroid;
                 let distance = agent.calc_distance(centroid);
                     if distance < min_dist{
                         min_dist = distance;
@@ -91,7 +141,7 @@ pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
         }
 
         // Find new centroids including the agents
-        new_centroids = vec![];
+        let mut new_centroids = vec![];
         for cluster in seperated_task_list.clone(){
             let (mut sum_x, mut sum_y): (f64, f64) = cluster
                 .task_list
@@ -136,5 +186,87 @@ pub fn k_clustering(problem: Tsp) -> Vec<Vec<Task>>{
     //     seperated_problems[i].total_distances = seperated_problems[i].calc_all_distance();
     // }
     // seperated_problems
+}
 
+pub fn k_clustering_no_agents(problem: Tsp) -> Vec<Vec<Task>>{
+    let mut diff = 1.0;
+    let mut i: usize = 0;
+    let num_clusters = Vec::from_iter(2..2*problem.agents.len());
+    let mut seperated_task_list: Vec<Cluster> = Vec::new();
+    let mut best_split = seperated_task_list.clone();
+    let mut best_score = std::f64::INFINITY;
+    let mut rng = rand::thread_rng();
+    for number_of_clusters in num_clusters{
+        for j in 0..number_of_clusters{
+            let x = problem.world_size.0*rng.gen::<f64>();
+            let y = problem.world_size.1*rng.gen::<f64>();
+            seperated_task_list.push(Cluster{
+                task_list: Vec::new(), 
+                agent: problem.agents[j].clone(), 
+                centroid: (x, y),
+                centroid_sums: (0.0, 0.0),
+                std_dev: 0.0,
+                dev_sum: 0.0
+            });
+        }
+        let mut initialize_task_list = seperated_task_list.clone();
+        while diff != 0.0 && i < problem.agents.len()*3{
+            seperated_task_list = initialize_task_list.clone();
+            // Assign each task to it's closest centroid
+            for task in &problem.tasks{
+                let mut distances = vec![];
+                for centroid in seperated_task_list.iter().map(|cluster| cluster.centroid){
+                    distances.push(task.calc_distance(centroid));
+                }
+                let (min_ind, _) = distances.iter().enumerate().min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap()).unwrap();
+                seperated_task_list[min_ind].add_task(task.clone());
+            }
+            // Push groups towards closer size
+            // Comment this for loop out for only dense data
+            for _ in 0..6*number_of_clusters/3{
+                let mut min_indices: Vec<usize> = (0..seperated_task_list.len()).collect();
+                min_indices.sort_by_key(|&index| seperated_task_list[index].task_list.len());
+                let (max_ind, _) = seperated_task_list.iter().enumerate().max_by_key(|(_, v)| v.task_list.len()).unwrap();
+                // Find task in largest task list closest to original centroid.
+                let mut closest_task_ind = 0;
+                let mut closest_list_ind = 0;
+                let mut dist: f64 = INFINITY.into();
+                for j in 0..seperated_task_list[max_ind].task_list.len(){
+                    for k in 0..2{
+                        let min_ind = min_indices[k];
+                        let comp = seperated_task_list[max_ind].task_list[j].calc_distance(seperated_task_list[min_ind].centroid);
+                        if comp < dist{
+                            closest_task_ind = j;
+                            closest_list_ind = k;
+                            dist = comp;
+                        }
+                    }
+                }
+                let moved_task = seperated_task_list[max_ind].remove_task(closest_task_ind);
+                seperated_task_list[closest_list_ind].add_task(moved_task);
+            }
+            // Compare new centroids with previous iteration
+            diff = 0.0;
+            for j in 0..number_of_clusters{
+                diff += seperated_task_list[j].std_dev;
+            }
+            if diff < best_score{
+                best_split = seperated_task_list.clone();
+                best_score = diff;
+            }
+            i += 1; 
+            // make new centroids
+            for j in 0..number_of_clusters{
+                let x = problem.world_size.0*rng.gen::<f64>();
+                let y = problem.world_size.1*rng.gen::<f64>();
+                initialize_task_list[j].centroid = (x,y);
+            }
+        }
+    }
+    // Create the vector Traveling salesmen problems to solve individually
+    let mut task_lists: Vec<Vec<Task>> = Vec::new();
+    for cluster in best_split{
+        task_lists.push(cluster.task_list);
+    }
+    task_lists
 }
