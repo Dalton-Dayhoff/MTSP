@@ -1,12 +1,13 @@
 use rand;
 use plotters::prelude::*;
+use core::f64;
 use core::task;
 use std::collections::HashSet;
 use std::io;
 use std::fs;
 use std::time::Duration;
 use toml::Value;
-use initialization::k_clustering;
+use initialization::{k_clustering, k_clustering_no_agents};
 use std::time::Instant;
 use nalgebra_sparse::{coo::*, csr::CsrMatrix, csc::CscMatrix};
 
@@ -545,6 +546,21 @@ pub(crate)fn read_toml_and_run()-> Result<(), Box<dyn std::error::Error>>{
         .filter_map(|val| val.as_float())
         .collect();
     let problem = create_random_mtsp(num_agents, num_tasks, (world_size[0], world_size[1]));
+    let mut problems = k_clustering_no_agents(problem.clone());
+    let mut full_problems: Vec<Tsp> = Vec::new();
+    for (tasklist, centroid) in problems{
+        full_problems.push(Tsp { 
+            tasks: tasklist, 
+            agents: vec![Agent {depot_location: (0.0, 0.0), current: (0.0, 0.0), tour: Vec::new()}], 
+            world_size: problem.world_size, 
+            tours: Vec::new(), 
+            total_distances: Vec::new() 
+        });
+    }
+    for (i, tsp_prob) in full_problems.iter().enumerate(){
+        let label = format!("Agent {}", i);
+        let _ = tsp_prob.draw_solution(label);
+    }
     // let _ = problem.draw_solution("original_mtsp".to_string());
     //     let problems = k_clustering(problem);
     //     for i in 0..problems.len(){
