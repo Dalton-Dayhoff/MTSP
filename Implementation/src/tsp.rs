@@ -1,15 +1,10 @@
 use rand;
 use plotters::prelude::*;
-use core::f64;
-use core::task;
-use std::collections::HashSet;
-use std::io;
-use std::fs;
-use std::time::Duration;
+use core::{f64, task};
+use std::{io, fs, time::Duration, path::Path};
 use toml::Value;
 use initialization::{k_clustering, k_clustering_no_agents};
 use std::time::Instant;
-use nalgebra_sparse::{coo::*, csr::CsrMatrix, csc::CscMatrix};
 
 use crate::initialization;
 
@@ -52,8 +47,8 @@ pub(crate)struct Agent {
     /// This is used by planners when trying to create a path through the tasks
     pub(crate)current: (f64, f64),
     /// A tour is the ordered list of tasks the agent collects
-    pub(crate)tour: Vec<Task>
-}
+    pub(crate)tour: Vec<Task>,
+    }
 impl Agent {
     /// Calculates the distance between the current task and any other point
     /// 
@@ -69,7 +64,11 @@ impl Agent {
 /// Allows an agent to be cloned
 impl Clone for Agent{
     fn clone(&self) -> Self {
-        Self {depot_location: self.depot_location.clone(), current: self.current.clone(), tour: self.tour.clone() }
+        Self {
+            depot_location: self.depot_location.clone(),
+            current: self.current.clone(), 
+            tour: self.tour.clone(),
+        }
     }
 }
 #[derive(Debug, Clone)]
@@ -85,7 +84,9 @@ pub(crate)struct Tsp {
     /// A tour is represented by the list of the lengths of all connections
     pub(crate) tours: Vec<Vec<f64>>,
     /// The list of total tour lengths for each agent
-    pub(crate) total_distances: Vec<f64>
+    pub(crate) total_distances: Vec<f64>,
+
+    groups: Option<Vec<Vec<Task>>>
 }
 
 impl Tsp {
@@ -98,10 +99,10 @@ impl Tsp {
         return task_number;
     }
 
-    fn in_same_group(&self, to_node: usize, from_node: usize, grouped_tasks: &Vec<Vec<Task>>) -> bool{
+    fn in_same_group(&self, to_node: usize, from_node: usize) -> bool{
         let to_task_ind = self.get_task_index(to_node);
         let from_task_ind = self.get_task_index(from_node);
-        for tasks in grouped_tasks{
+        for tasks in self.groups.as_ref().unwrap(){
             let to_bool = tasks.contains(&self.tasks[to_task_ind]);
             let from_bool = tasks.contains(&self.tasks[from_task_ind]);
             match (to_bool, from_bool) {
@@ -112,6 +113,15 @@ impl Tsp {
             }
         }
         return false;
+    }
+    
+    fn get_backbone_node_index(&self, from_node: usize) -> usize{
+        for (i, tasks) in self.groups.as_ref().unwrap().iter().enumerate(){
+            if tasks.contains(&self.tasks[from_node]){
+                return i;
+            }
+        }
+        return 0;
     }
 
     /// Finds the total tour length of each tour
@@ -149,7 +159,9 @@ impl Tsp {
     /// 
     /// let _ = Tsp.draw_solution("MTSP".to_string());
     fn draw_solution(&self, name: String) -> Result<(), Box<dyn std::error::Error>>{
+        // Create name of images
         let name = "Images/".to_owned() + &name + ".svg";
+
         
         // Create background
         let root = SVGBackend::new(&name, (800, 600)).into_drawing_area();
@@ -202,6 +214,128 @@ impl Tsp {
         Ok(())
     }
 
+    /// Creates the network flow formulation of the mTSP
+    ///     sparse matrix representation
+    /// 
+    /// * 'columns_of_graph' - The total number of columns
+    /// * 'early_ender' - The extra multiplyer to adjust the costs of an agents route ending earlier in the graph
+    ///     This means an agent collects less tasks than the other agent(s)
+    pub fn to_incidence_backbone(
+        mut self,
+        columns_of_graph: usize,
+        early_ender: usize
+    ) -> (Vec<f64>, Vec<f64>, Vec<usize>, Vec<usize>, Vec<i64>, Vec<usize>){
+        let nodes_in_graph = self.agents.len()*2 + (columns_of_graph - 2)*self.tasks.len();
+        // Define edges
+        let mut edge_costs: Vec<f64>  = Vec::new();
+        let mut distances: Vec<f64> = Vec::new();
+        let mut rows: Vec<usize> = Vec::new();
+        let mut columns: Vec<usize> = Vec::new();
+        let mut values: Vec<i64> = Vec::new();
+        let mut edge: usize = 0;
+
+        // Create groups
+        self.groups = Some(k_clustering_no_agents(&self));
+        let group_lengths: Vec<usize> = self.groups.clone().unwrap().iter().map(|task_group| task_group.len()).collect();
+        let max_group_size = group_lengths.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+
+        // first set of edges is from salesmen 1 to all the cities
+        let mut to_node = self.agents.len();
+        let mut from_node = 0;
+        for agent in &self.agents{
+            for task in &self.tasks{
+                // Get cost
+                let task_location = task.location;
+                let dist = agent.calc_distance(task_location);
+                edge_costs.push(dist);
+                distances.push(dist);
+
+                // Incidence matrix
+                columns.push(edge);
+                columns.push(edge);
+                rows.push(to_node);
+                rows.push(from_node);
+                values.push(-1);
+                values.push(1);
+
+                edge += 1;
+                to_node += 1;
+            }
+            from_node += 1;
+            to_node = self.agents.len();
+        }
+        to_node = self.agents.len() + self.tasks.len();
+        let mut backbone_group = 1;
+        // This iterates over all the edges that directly connect cities together and cities the ending depots
+        for i in 0..columns_of_graph - 2{
+            for task in &self.tasks{
+                for next_task in &self.tasks{
+                    if i == columns_of_graph - 3{
+                        break;
+                    }
+                    if !self.in_same_group(to_node, from_node){
+                        let backbone_index = self.get_backbone_node_index(from_node);
+                        continue;
+                    } else{
+                        // Cost
+                        let dist = task.calc_distance(next_task.location);
+                        edge_costs.push(dist);
+                        distances.push(dist);
+    
+                        // Incidence 
+                        // Each column has two values, 1 and -1
+                        columns.push(edge);
+                        columns.push(edge);
+                        rows.push(to_node);
+                        rows.push(from_node);
+                        values.push(-1);
+                        values.push(1);
+                    }
+                
+                    edge += 1;
+                    to_node += 1;
+                }
+                // Connect to end nodes
+                // Set the node the edge is going to
+                to_node = self.agents.len() + (columns_of_graph - 2)*self.tasks.len();
+                for agent in &self.agents{
+                    // Cost
+                    let dist = task.calc_distance(agent.depot_location);
+                    let multiplyer = if i >= 10 {1.0} else {(10 - i) as f64};
+                    edge_costs.push((multiplyer * early_ender as f64 * (columns_of_graph - i) as f64) *dist);
+                    distances.push(dist);
+                    // Incidence 
+                    columns.push(edge);
+                    columns.push(edge);
+                    rows.push(to_node);
+                    rows.push(from_node);
+                    values.push(-1);
+                    values.push(1);
+                
+                    edge += 1;
+                    to_node += 1;
+                }
+
+                // Set the nodes the edge is connected to
+                to_node = self.agents.len() + (i+1)*self.tasks.len();
+                from_node += 1;
+            }
+            if i > backbone_group*max_group_size{
+                backbone_group += 1;
+            }
+            // Set the node the edge is going to
+            to_node = self.agents.len() + (i+2)*self.tasks.len();
+        }
+        let other_data = vec![self.tasks.len(), self.agents.len(), columns_of_graph - 2, nodes_in_graph, edge_costs.len()];  
+        return (distances, edge_costs, rows, columns, values, other_data);
+    }
+
+    /// Creates the network flow formulation of the mTSP
+    ///     sparse matrix representation
+    /// 
+    /// * 'columns_of_graph' - The total number of columns
+    /// * 'early_ender' - The extra multiplyer to adjust the costs of an agents route ending earlier in the graph
+    ///     This means an agent collects less tasks than the other agent(s)
     pub fn to_incidence_simplified(
         self,
         columns_of_graph: usize,
@@ -411,7 +545,8 @@ fn _create_specific_tsp() -> Tsp{
         agents: agents,
         world_size: w_size,
         tours: Vec::new(),
-        total_distances: Vec::new()
+        total_distances: Vec::new(),
+        groups: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -458,7 +593,8 @@ fn _create_specific_mtsp() -> Tsp{
         agents: agents,
         world_size: w_size,
         tours: Vec::new(),
-        total_distances: Vec::new()
+        total_distances: Vec::new(),
+        groups: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -491,7 +627,8 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
         agents: agents,
         world_size: world_size,
         tours: Vec::new(),
-        total_distances: Vec::new()
+        total_distances: Vec::new(),
+        groups: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -546,16 +683,20 @@ pub(crate)fn read_toml_and_run()-> Result<(), Box<dyn std::error::Error>>{
         .filter_map(|val| val.as_float())
         .collect();
     let problem = create_random_mtsp(num_agents, num_tasks, (world_size[0], world_size[1]));
-    let mut problems = k_clustering_no_agents(problem.clone());
+    let mut problems = k_clustering_no_agents(&problem);
     let mut full_problems: Vec<Tsp> = Vec::new();
-    for (tasklist, centroid) in problems{
+    for tasklist in problems{
         full_problems.push(Tsp { 
             tasks: tasklist, 
             agents: vec![Agent {depot_location: (0.0, 0.0), current: (0.0, 0.0), tour: Vec::new()}], 
             world_size: problem.world_size, 
             tours: Vec::new(), 
-            total_distances: Vec::new() 
+            total_distances: Vec::new(),
+            groups: None 
         });
+    }
+    for entry in std::fs::read_dir("Images/").unwrap() {
+        std::fs::remove_file(entry.unwrap().path()).unwrap();
     }
     for (i, tsp_prob) in full_problems.iter().enumerate(){
         let label = format!("Agent {}", i);
