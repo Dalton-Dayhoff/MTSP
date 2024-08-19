@@ -85,8 +85,12 @@ pub(crate)struct Tsp {
     pub(crate) tours: Vec<Vec<f64>>,
     /// The list of total tour lengths for each agent
     pub(crate) total_distances: Vec<f64>,
-
-    groups: Option<Vec<Vec<Task>>>
+    // Optional list of tasks that are clustrered together
+    groups: Option<Vec<Vec<Task>>>,
+    //
+    num_backbone_per_group: Option<usize>,
+    //
+    current_backbone_group: Option<usize>
 }
 
 impl Tsp {
@@ -94,7 +98,11 @@ impl Tsp {
     fn get_task_index(&self, node_index: usize) -> usize {
         let num_tasks = self.tasks.len();
         let num_agents = self.agents.len();
-        let mut task_number = node_index - num_agents;
+        let mut num_backbone = 0;
+        if !self.current_backbone_group.is_none(){
+            num_backbone = self.num_backbone_per_group.unwrap() * self.current_backbone_group.unwrap();
+        }
+        let mut task_number = node_index - num_agents - num_backbone;
         task_number %= num_tasks;
         return task_number;
     }
@@ -116,8 +124,9 @@ impl Tsp {
     }
     
     fn get_backbone_node_index(&self, from_node: usize) -> usize{
+        let from_task_ind = self.get_task_index(from_node);
         for (i, tasks) in self.groups.as_ref().unwrap().iter().enumerate(){
-            if tasks.contains(&self.tasks[from_node]){
+            if tasks.contains(&self.tasks[from_task_ind]){
                 return i;
             }
         }
@@ -236,6 +245,7 @@ impl Tsp {
 
         // Create groups
         self.groups = Some(k_clustering_no_agents(&self));
+        self.num_backbone_per_group = Some(self.groups.clone().unwrap().len());
         let group_lengths: Vec<usize> = self.groups.clone().unwrap().iter().map(|task_group| task_group.len()).collect();
         let max_group_size = group_lengths.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
 
@@ -266,6 +276,8 @@ impl Tsp {
         }
         to_node = self.agents.len() + self.tasks.len();
         let mut backbone_group = 1;
+        let mut backbone_nodes_idx_start = to_node;
+        to_node += self.num_backbone_per_group.unwrap();
         // This iterates over all the edges that directly connect cities together and cities the ending depots
         for i in 0..columns_of_graph - 2{
             for task in &self.tasks{
@@ -273,9 +285,22 @@ impl Tsp {
                     if i == columns_of_graph - 3{
                         break;
                     }
-                    if !self.in_same_group(to_node, from_node){
-                        let backbone_index = self.get_backbone_node_index(from_node);
+                    if i != (backbone_group - 1) * max_group_size && !self.in_same_group(to_node, from_node){
+                        // This checks to see if there exists a backbone node here
                         continue;
+                    }
+                    else if !self.in_same_group(to_node, from_node){
+                        let backbone_index = self.get_backbone_node_index(from_node);
+                        let to_node_backbone = backbone_nodes_idx_start + backbone_index;
+                        let dist = 0.0;
+                        edge_costs.push(dist);
+                        distances.push(dist);
+                        columns.push(edge);
+                        columns.push(edge);
+                        rows.push(to_node_backbone);
+                        rows.push(from_node);
+                        values.push(-1);
+                        values.push(1);
                     } else{
                         // Cost
                         let dist = task.calc_distance(next_task.location);
@@ -291,40 +316,61 @@ impl Tsp {
                         values.push(-1);
                         values.push(1);
                     }
-                
-                    edge += 1;
                     to_node += 1;
-                }
-                // Connect to end nodes
-                // Set the node the edge is going to
-                to_node = self.agents.len() + (columns_of_graph - 2)*self.tasks.len();
-                for agent in &self.agents{
-                    // Cost
-                    let dist = task.calc_distance(agent.depot_location);
-                    let multiplyer = if i >= 10 {1.0} else {(10 - i) as f64};
-                    edge_costs.push((multiplyer * early_ender as f64 * (columns_of_graph - i) as f64) *dist);
-                    distances.push(dist);
-                    // Incidence 
-                    columns.push(edge);
-                    columns.push(edge);
-                    rows.push(to_node);
-                    rows.push(from_node);
-                    values.push(-1);
-                    values.push(1);
-                
                     edge += 1;
-                    to_node += 1;
                 }
-
-                // Set the nodes the edge is connected to
-                to_node = self.agents.len() + (i+1)*self.tasks.len();
+                to_node = self.agents.len() + (i+1)*self.tasks.len() + backbone_group*self.num_backbone_per_group.unwrap();
                 from_node += 1;
             }
             if i > backbone_group*max_group_size{
                 backbone_group += 1;
             }
+            if i+1 == (backbone_group - 1)*max_group_size{
+                let new_backbone_nodes_idx_start = to_node + 1;
+                // Connect the backbone nodes
+                for j in backbone_nodes_idx_start..(backbone_nodes_idx_start + self.num_backbone_per_group.unwrap()){
+                    for k in new_backbone_nodes_idx_start..(new_backbone_nodes_idx_start + self.num_backbone_per_group.unwrap()) {
+                        let dist = 0.0;
+                        edge_costs.push(dist);
+                        distances.push(dist);
+
+                        columns.push(edge);
+                        columns.push(edge);
+                        let from_backbone = self.get_backbone_node_index(j);
+                        let to_backbone = self.get_backbone_node_index(i);
+                        if from_backbone == to_backbone{
+                            continue;
+                        }
+                        rows.push(j);
+                        rows.push(k);
+                        values.push(-1);
+                        values.push(1);
+                        edge += 1;
+                    }
+                    // Connect previous backbone nodes to their groups
+                    to_node = self.agents.len() + (i+2)*self.tasks.len() + backbone_group*self.num_backbone_per_group.unwrap();
+                    for _ in &self.tasks{
+                        let backbone_idx = self.get_backbone_node_index(to_node);
+                        let backbone_node_idx = j - backbone_nodes_idx_start;
+                        if backbone_idx == backbone_node_idx{
+                            let dist = 0.0;
+                            edge_costs.push(dist);
+                            distances.push(dist);
+                            
+                            columns.push(edge);
+                            columns.push(edge);
+                            rows.push(j);
+                            rows.push(to_node);
+                            values.push(-1);
+                            values.push(1);
+                            edge += 1;
+                        }
+                        to_node += 1;
+                    }
+                }
+            }
             // Set the node the edge is going to
-            to_node = self.agents.len() + (i+2)*self.tasks.len();
+            to_node = self.agents.len() + (i+2)*self.tasks.len() + backbone_group*self.num_backbone_per_group.unwrap();
         }
         let other_data = vec![self.tasks.len(), self.agents.len(), columns_of_graph - 2, nodes_in_graph, edge_costs.len()];  
         return (distances, edge_costs, rows, columns, values, other_data);
