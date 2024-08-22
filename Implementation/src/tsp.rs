@@ -592,7 +592,9 @@ fn _create_specific_tsp() -> Tsp{
         world_size: w_size,
         tours: Vec::new(),
         total_distances: Vec::new(),
-        groups: None
+        groups: None,
+        num_backbone_per_group: None,
+        current_backbone_group: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -640,7 +642,9 @@ fn _create_specific_mtsp() -> Tsp{
         world_size: w_size,
         tours: Vec::new(),
         total_distances: Vec::new(),
-        groups: None
+        groups: None,
+        num_backbone_per_group: None,
+        current_backbone_group: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -674,7 +678,9 @@ pub(crate)fn create_random_mtsp(num_agents: usize, num_tasks: usize, world_size:
         world_size: world_size,
         tours: Vec::new(),
         total_distances: Vec::new(),
-        groups: None
+        groups: None,
+        num_backbone_per_group: None,
+        current_backbone_group: None
     };
     problem.tours = problem.calc_tours();
     problem.total_distances = problem.calc_all_distance();
@@ -738,7 +744,9 @@ pub(crate)fn read_toml_and_run()-> Result<(), Box<dyn std::error::Error>>{
             world_size: problem.world_size, 
             tours: Vec::new(), 
             total_distances: Vec::new(),
-            groups: None 
+            groups: None,
+            num_backbone_per_group: None,
+            current_backbone_group: None 
         });
     }
     for entry in std::fs::read_dir("Images/").unwrap() {
